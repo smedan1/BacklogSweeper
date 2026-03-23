@@ -938,15 +938,9 @@
     header.textContent = 'Close ' + row.dataset.key;
     pop.appendChild(header);
 
-    // Find the close transition (server will chain if not directly available)
-    var closeTrans = null;
-    for (var i = 0; i < transitions.length; i++) {
-      if (transitions[i].name.toLowerCase().indexOf('close') !== -1) { closeTrans = transitions[i]; break; }
-    }
-    // Fallback: use first transition — the server handles chaining
-    if (!closeTrans && transitions.length > 0) closeTrans = transitions[0];
-    var transId = closeTrans ? closeTrans.id : '';
-    var transName = closeTrans ? closeTrans.name : 'Close Issue';
+    // Always send "Close Issue" — the server resolves the correct ID and chains if needed
+    var transId = '';
+    var transName = 'Close Issue';
 
     var RESOLUTIONS = ['Won\'t Do', 'Duplicate', 'Done', 'Cannot Reproduce', 'Retired'];
 
