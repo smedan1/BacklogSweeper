@@ -1,0 +1,3462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backlog Sweeper — Loading…</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f5f7; color: #172b4d; font-size: 14px;
+         display: flex; flex-direction: column; }
+
+  /* Header */
+  .header { background: #00695c; color: #fff; padding: 10px 32px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  .header .meta { opacity: 0.85; font-size: 13px; display: flex; gap: 24px; margin-left: 16px; }
+  .header .meta span { display: flex; align-items: center; gap: 5px; }
+
+  /* Layout */
+  .detail-wrapper { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+  .container { max-width: 1600px; width: 100%; margin: 0 auto; padding: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  body.detail-open .container { max-width: none; }
+  .sticky-top { flex-shrink: 0; z-index: 50; background: #f4f5f7; padding: 12px 32px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .backlog-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 8px 32px 16px; display: flex; flex-direction: column; gap: 16px; }
+  body.detail-open .backlog-scroll { padding-right: 16px; }
+
+  /* Issue Detail Panel */
+  #detail-panel { display: none; flex-direction: column; width: 50vw; min-width: 320px; background: #fff; border-left: none; overflow: hidden; font-size: 13px; box-shadow: -2px 0 8px rgba(0,0,0,.06); }
+  #detail-content { display: none; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+  body.detail-open #detail-panel { display: flex; }
+
+  /* Resize handle between backlog and detail panel */
+  #detail-resize-handle { display: none; width: 5px; cursor: col-resize; background: #dfe1e6; flex-shrink: 0; position: relative; z-index: 20; transition: background .15s; }
+  #detail-resize-handle:hover, #detail-resize-handle.dragging { background: #00695c; }
+  body.detail-open #detail-resize-handle { display: block; }
+  body.resizing { cursor: col-resize !important; user-select: none !important; }
+  body.resizing * { cursor: col-resize !important; user-select: none !important; }
+
+  /* Two-column layout inside detail panel */
+  .detail-columns { display: flex; flex: 1; min-height: 0; }
+  .detail-col-main { flex: 3; min-width: 0; overflow-y: auto; border-right: 1px solid #f4f5f7; }
+  .detail-col-side { flex: 2; min-width: 0; overflow-y: auto; background: #fafbfc; }
+
+  #detail-panel .detail-header { flex-shrink: 0; background: #fff; padding: 16px 20px 12px; border-bottom: 1px solid #ebecf0; }
+  #detail-panel .detail-header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  #detail-panel .detail-key { font-size: 14px; font-weight: 600; color: #0052cc; text-decoration: none; }
+  #detail-panel .detail-key:hover { text-decoration: underline; }
+  #detail-panel .detail-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #5e6c84; padding: 2px 6px; border-radius: 3px; line-height: 1; }
+  #detail-panel .detail-close:hover { background: #f4f5f7; color: #172b4d; }
+  #detail-panel .detail-summary { font-size: 16px; font-weight: 600; color: #172b4d; line-height: 1.3; margin-bottom: 8px; }
+  #detail-panel .detail-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  /* Collapsible sections */
+  #detail-panel .detail-section { border-bottom: 1px solid #f4f5f7; }
+  #detail-panel .detail-section-header { padding: 10px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; }
+  #detail-panel .detail-section-header:hover { background: #fafbfc; }
+  #detail-panel .detail-section-header .section-chevron { font-size: 10px; color: #97a0af; transition: transform .15s; }
+  #detail-panel .detail-section.collapsed .detail-section-body { display: none; }
+  #detail-panel .detail-section.collapsed .section-chevron { transform: rotate(-90deg); }
+  #detail-panel .detail-section-body { padding: 4px 20px 12px; }
+
+  /* Field rows */
+  #detail-panel .detail-field { display: flex; padding: 4px 0; font-size: 12px; line-height: 1.5; }
+  #detail-panel .detail-field-label { width: 120px; flex-shrink: 0; color: #5e6c84; font-weight: 500; }
+  #detail-panel .detail-field-value { flex: 1; color: #172b4d; word-break: break-word; }
+
+  /* People - avatar + name */
+  #detail-panel .detail-person { display: flex; align-items: center; gap: 8px; }
+  #detail-panel .detail-avatar { width: 24px; height: 24px; border-radius: 50%; }
+
+  /* Description rendered HTML */
+  #detail-panel .detail-description { font-size: 13px; line-height: 1.6; color: #172b4d; word-wrap: break-word; overflow-wrap: break-word; }
+  #detail-panel .detail-description p { margin-bottom: 8px; }
+  #detail-panel .detail-description ul, #detail-panel .detail-description ol { padding-left: 20px; margin-bottom: 8px; }
+  #detail-panel .detail-description code { background: #f4f5f7; padding: 1px 4px; border-radius: 2px; font-size: 12px; }
+  #detail-panel .detail-description pre { background: #f4f5f7; padding: 8px 12px; border-radius: 3px; overflow-x: auto; font-size: 12px; margin-bottom: 8px; }
+  #detail-panel .detail-description img { max-width: 100%; height: auto; }
+  #detail-panel .detail-description a { color: #0052cc; }
+  #detail-panel .detail-description table { border-collapse: collapse; margin-bottom: 8px; font-size: 12px; }
+  #detail-panel .detail-description table td, #detail-panel .detail-description table th { border: 1px solid #dfe1e6; padding: 4px 8px; }
+
+  /* Issue links */
+  #detail-panel .detail-link-item { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; flex-wrap: wrap; }
+  #detail-panel .detail-link-type { color: #5e6c84; font-style: italic; white-space: nowrap; }
+
+  /* Attachments */
+  #detail-panel .detail-attachment { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; }
+  #detail-panel .detail-attachment-size { color: #97a0af; font-size: 11px; }
+
+  /* Comments */
+  #detail-panel .detail-comment { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f4f5f7; }
+  #detail-panel .detail-comment:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  #detail-panel .detail-comment-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  #detail-panel .detail-comment-author { font-weight: 600; font-size: 12px; color: #172b4d; }
+  #detail-panel .detail-comment-date { font-size: 11px; color: #97a0af; }
+  #detail-panel .detail-comment-body { font-size: 13px; line-height: 1.5; color: #172b4d; }
+  #detail-panel .detail-comment-body p { margin-bottom: 6px; }
+  #detail-panel .detail-comment-body a { color: #0052cc; }
+
+  /* Dev info */
+  #detail-panel .dev-item { display: flex; align-items: center; gap: 6px; padding: 4px 0 2px; font-size: 13px; font-weight: 600; color: #172b4d; }
+  #detail-panel .dev-count { font-weight: 700; color: #0052cc; }
+  #detail-panel .dev-sub-item { padding: 2px 0 2px 16px; font-size: 12px; color: #172b4d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #detail-panel .dev-sub-item a { color: #0052cc; text-decoration: none; }
+  #detail-panel .dev-sub-item a:hover { text-decoration: underline; }
+
+  /* Loading state */
+  #detail-panel .detail-loading { padding: 40px 20px; text-align: center; color: #97a0af; font-style: italic; animation: loadingPulse 1.4s ease-in-out infinite; }
+
+  /* Active row highlight */
+  tr.detail-active > td { background: #e8f0fe !important; }
+
+  /* Cards */
+  .card { background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.1); overflow: hidden; flex-shrink: 0; }
+  .card-header { padding: 14px 20px; border-bottom: 1px solid #ebecf0; display: flex; align-items: center; justify-content: space-between; }
+  #backlog-container { display: grid; gap: 16px; flex-shrink: 0; }
+  #backlog-container .card-header { cursor: grab; }
+  #backlog-container .card-header:active { cursor: grabbing; }
+  #backlog-container .card.drag-over-card { outline: 2px dashed #00695c; outline-offset: -2px; }
+  #backlog-container .card.collapsed table { display: none; }
+  .collapse-toggle { background: none; border: none; cursor: pointer; padding: 2px 4px; margin-right: 6px; color: #5e6c84; font-size: 12px; line-height: 1; transition: transform .15s; display: inline-flex; align-items: center; }
+  .collapse-toggle:hover { color: #172b4d; }
+  .card.collapsed .collapse-toggle { transform: rotate(-90deg); }
+  .card-header h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; }
+  .card-body { padding: 20px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; }
+  #backlog-container table { table-layout: fixed; }
+  #backlog-container td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; padding: 8px 10px; border-bottom: 2px solid #ebecf0; white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid #f4f5f7; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8f9fa; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+
+  a { color: #0052cc; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Summary Stats Bar */
+  .stats-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .stat { background: #f4f5f7; border-radius: 5px; padding: 12px 8px; text-align: center; }
+  .stat .val { font-size: 26px; font-weight: 700; color: #172b4d; }
+  .stat .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; margin-top: 4px; }
+  .stat.highlight .val { color: #00695c; }
+  .stat.warn .val { color: #ff8b00; }
+  .stat.danger .val { color: #bf2600; }
+  .stat.good .val { color: #006644; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .badge-story    { background: #deebff; color: #0747a6; }
+  .badge-bug      { background: #ffebe6; color: #bf2600; }
+  .badge-spike    { background: #eae6ff; color: #403294; }
+  .badge-epic     { background: #eae6ff; color: #403294; }
+  .badge-todo     { background: #f4f5f7; color: #42526e; }
+  .badge-progress { background: #fff3cd; color: #7a4f00; }
+  .badge-done     { background: #e3fcef; color: #006644; }
+  .badge-blocked  { background: #ffebe6; color: #bf2600; }
+  .badge-staging  { background: #e6fcff; color: #00636e; }
+
+  .pri-critical { }
+  .pri-major    { }
+  .pri-minor    { }
+  .pri-icon     { width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 2px; }
+  .pri-picker { position: relative; display: inline-block; cursor: pointer; border-bottom: 1px dashed #c1c7d0; padding: 1px 2px; white-space: nowrap; }
+  .pri-picker .pri-label { display: inline; }
+  .pri-picker .pri-caret { font-size: 10px; margin-left: 3px; color: #97a0af; }
+  .pri-menu { display: none; position: fixed; z-index: 1000;
+              background: #fff; border: 1px solid #dfe1e6; border-radius: 3px;
+              box-shadow: 0 4px 8px rgba(0,0,0,.1); min-width: 140px; padding: 4px 0; }
+  .pri-menu.open { display: block; }
+  .pri-menu-item { display: flex; align-items: center; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .pri-menu-item:hover { background: #ebecf0; }
+  .pri-menu-item.selected { background: #deebff; }
+  .pri-menu-item img { width: 16px; height: 16px; margin-right: 6px; flex-shrink: 0; }
+  td:has(.pri-picker) { white-space: nowrap; }
+
+  /* Sprint issues section */
+  .empty-state { text-align: center; padding: 28px; color: #97a0af; font-style: italic; }
+
+  /* Source note */
+  .source-note { font-size: 11px; color: #97a0af; }
+
+  /* Filter icon & popover */
+  .filter-icon { cursor: pointer; color: #97a0af; padding: 2px 4px; border-radius: 3px; margin-left: 6px; margin-right: auto; position: relative; display: inline-flex; align-items: center; }
+  .filter-icon:hover { background: #ebecf0; color: #5e6c84; }
+  .filter-icon.active { color: #00695c; }
+  .filter-popover { position: fixed; z-index: 900; background: #fff; border: 1px solid #dfe1e6;
+                     border-radius: 6px; box-shadow: 0 4px 12px rgba(9,30,66,.15); padding: 8px 0; min-width: 180px; font-size: 13px; }
+  .filter-popover label { display: flex; align-items: center; gap: 8px; padding: 5px 14px; cursor: pointer; font-weight: 400; text-transform: none; letter-spacing: 0; color: #172b4d; }
+  .filter-popover label:hover { background: #f4f5f7; }
+  .filter-popover input[type="checkbox"] { margin: 0; }
+
+  /* Epic expand/collapse */
+  tr.epic-expandable { cursor: pointer; }
+  tr.epic-expandable:hover td { background: #f0f4ff !important; }
+  tr.epic-expandable td:first-child { padding-left: 30px !important; }
+  .epic-expand-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 10px; color: #97a0af; transition: transform .15s; }
+  tr.epic-expanded .epic-expand-icon { transform: translateY(-50%) rotate(90deg); }
+  tr.epic-child-row td { background: #f8f7ff; border-bottom: 1px solid #f0f1f3; }
+  tr.epic-child-row:hover td { background: #eee8ff !important; }
+  tr.epic-child-row td:first-child { padding-left: 32px; border-left: 3px solid #eae6ff; }
+  tr.epic-child-row.not-in-backlog { cursor: grab; }
+  .epic-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #5e6c84; }
+  .epic-cell a { color: #5e6c84; text-decoration: none; }
+  .epic-cell a:hover { color: #0052cc; text-decoration: underline; }
+  tr.epic-child-row.not-in-backlog td:first-child { padding-left: 40px; position: relative; }
+  tr.epic-child-row.not-in-backlog td:first-child::before { content: '\2807'; color: #c1c7d0; font-size: 11px; position: absolute; left: 22px; top: 50%; transform: translateY(-50%); }
+  .backlog-indicator { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; background: #deebff; color: #0747a6; margin-left: 6px; white-space: nowrap; vertical-align: middle; }
+  .epic-loading-row td { color: #97a0af; font-style: italic; padding-left: 32px !important; }
+
+  th.sortable { cursor: pointer; user-select: none; position: relative; padding-right: 16px !important; }
+  th.sortable:hover { color: #00695c; }
+  th.sortable::after { content: '\21C5'; font-size: 10px; color: #c1c7d0; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); }
+  th.sortable.sort-asc::after { content: '\25B2'; color: #00695c; }
+  th.sortable.sort-desc::after { content: '\25BC'; color: #00695c; }
+
+  .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #97a0af; padding: 10px 20px 4px; }
+
+  /* ── Drag & Drop ── */
+  tr[draggable="true"] { cursor: grab; user-select: none; }
+  tr[draggable="true"]:hover td { background: #f0f4ff !important; }
+  tr[draggable="true"] td:first-child { padding-left: 18px; position: relative; }
+  tr[draggable="true"] td:first-child::before { content: '\2807'; color: #c1c7d0; font-size: 11px; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); }
+  tr.dragging { opacity: 0.35; }
+
+  tbody.droppable { transition: background .15s; }
+  .empty-drop-placeholder td { text-align: center; padding: 20px; color: #97a0af; font-style: italic; font-size: 13px; }
+  tbody.drop-over { outline: 2px dashed #00695c; outline-offset: -3px; background: #e0f2f1; }
+  tbody.drop-over tr:hover td { background: transparent !important; }
+
+  /* Toast notification */
+  #toast {
+    position: fixed; bottom: 28px; right: 28px;
+    padding: 10px 18px; border-radius: 5px; font-size: 13px; font-weight: 500;
+    z-index: 1000; display: none; box-shadow: 0 3px 10px rgba(0,0,0,.18);
+    animation: fadeIn .2s ease;
+  }
+  #toast.success { background: #e3fcef; color: #006644; border: 1px solid #79f2c0; }
+  #toast.warn    { background: #fff7d6; color: #7a4f00; border: 1px solid #f6c342; }
+  #toast.error   { background: #ffebe6; color: #bf2600; border: 1px solid #ff8f73; }
+  #toast.info    { background: #deebff; color: #0747a6; border: 1px solid #4c9aff; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* Pending changes panel */
+  #pending-panel {
+    background: #fff7d6; border-top: 2px solid #f6c342;
+    padding: 10px 32px; display: none;
+    flex-shrink: 0;
+  }
+  #pending-panel h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #7a4f00; margin: 0; }
+  #pending-header { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+  #pending-count { background: #7a4f00; color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 8px; min-width: 20px; text-align: center; }
+  #pending-body { margin-top: 10px; }
+  #pending-panel p { font-size: 12px; color: #5e6c84; margin-bottom: 10px; }
+  #pending-list { font-size: 12px; color: #172b4d; list-style: disc; padding-left: 18px; line-height: 1.8; margin-bottom: 14px; max-height: 150px; overflow-y: auto; }
+  #pending-list li { transition: color .3s, opacity .3s; }
+  #apply-btn {
+    background: #00695c; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  #apply-btn:hover { background: #00796b; }
+  #apply-btn:disabled { background: #97a0af; cursor: default; }
+  #discard-btn { background: #bf2600; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #discard-btn:hover { background: #de350b; }
+
+  /* Context menu */
+  .ctx-menu { position: fixed; z-index: 2000; background: #fff; border: 1px solid #dfe1e6;
+    border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.15); padding: 4px 0; min-width: 180px; font-size: 13px; }
+  .ctx-menu-header { padding: 6px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .5px; color: #5e6c84; }
+  .ctx-menu-item { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+  .ctx-menu-item:hover { background: #ebecf0; }
+
+  /* Editable SP input */
+  .sp-edit {
+    width: 38px; text-align: right; font-size: 13px; font-family: inherit;
+    border: none; border-bottom: 1px dashed #c1c7d0; background: transparent;
+    outline: none; padding: 0; -moz-appearance: textfield;
+  }
+  .sp-edit:focus { border-bottom-color: #00695c; }
+  .sp-edit::-webkit-inner-spin-button, .sp-edit::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .assignee-edit {
+    font-size: 13px; font-family: inherit; width: 100%; max-width: 130px;
+    border: none; border-bottom: 1px dashed #c1c7d0; background: transparent;
+    outline: none; padding: 0; cursor: pointer; -webkit-appearance: none; appearance: none;
+    text-overflow: ellipsis; overflow: hidden;
+  }
+  .assignee-edit:focus { border-bottom-color: #00695c; }
+
+  /* Cell flash on update */
+  @keyframes cellFlash { 0%,100% { background: transparent; } 30% { background: #fffae6; } }
+  .flash { animation: cellFlash 1s ease; }
+
+  /* Loading row */
+  @keyframes loadingPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .loading-row td { text-align: center; padding: 24px; font-size: 13px; font-weight: 500; color: #00695c; }
+  .loading-row td::before { content: '\23F3  '; }
+  .loading-row td { animation: loadingPulse 1.4s ease-in-out infinite; }
+
+  /* ── Startup check overlay ── */
+  #startup-overlay {
+    position: fixed; inset: 0; background: rgba(9,30,66,.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; transition: opacity .3s;
+  }
+  #startup-overlay.hidden { opacity: 0; pointer-events: none; }
+  #startup-card {
+    background: #fff; border-radius: 8px; padding: 28px 32px; min-width: 360px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.22);
+  }
+  #startup-card h2 { font-size: 14px; font-weight: 700; color: #172b4d; margin-bottom: 18px; }
+  .svc-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+  .svc-icon { font-size: 16px; line-height: 1.4; flex-shrink: 0; width: 20px; text-align: center; }
+  .svc-body { flex: 1; }
+  .svc-name { font-weight: 600; font-size: 13px; color: #172b4d; }
+  .svc-hint { font-size: 12px; color: #5e6c84; margin-top: 3px; }
+  .svc-hint code { background: #f4f5f7; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px; }
+  .svc-hint.err { color: #bf2600; }
+
+  /* ── Custom confirm dialog ── */
+  #confirm-overlay { display:none; position:fixed; inset:0; background:rgba(9,30,66,.54); z-index:2000; align-items:center; justify-content:center; }
+  #confirm-dialog { background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.25); padding:24px 28px; max-width:400px; width:90%; }
+  #confirm-dialog h3 { font-size:16px; font-weight:600; margin-bottom:12px; }
+  #confirm-dialog p { font-size:14px; color:#172b4d; margin-bottom:20px; }
+  #confirm-dialog .confirm-actions { display:flex; justify-content:flex-end; gap:8px; }
+  #confirm-dialog .confirm-actions button { padding:6px 16px; border-radius:4px; border:none; font-size:14px; cursor:pointer; }
+  #confirm-dialog .btn-cancel { background:#f4f5f7; color:#172b4d; }
+  #confirm-dialog .btn-cancel:hover { background:#ebecf0; }
+  #confirm-dialog .btn-confirm { background:#de350b; color:#fff; }
+  #confirm-dialog .btn-confirm:hover { background:#bf2600; }
+
+  /* Staleness indicators */
+  .age-fresh { color: #006644; }
+  .age-aging { color: #ff8b00; }
+  .age-stale { color: #bf2600; font-weight: 600; }
+  .age-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .age-dot-fresh { background: #006644; }
+  .age-dot-aging { background: #ff8b00; }
+  .age-dot-stale { background: #bf2600; }
+  tr.stale-row { border-left: 3px solid #bf2600; }
+  tr.stale-row > td:first-child { border-left: 3px solid #bf2600; }
+
+  /* Toolbar */
+  .toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.1); flex-wrap: wrap; }
+  .toolbar input[type="text"] { padding: 6px 10px; border: 1px solid #dfe1e6; border-radius: 3px; font-size: 13px; width: 220px; outline: none; }
+  .toolbar input[type="text"]:focus { border-color: #00695c; }
+  .toolbar select { padding: 6px 10px; border: 1px solid #dfe1e6; border-radius: 3px; font-size: 13px; background: #fff; outline: none; cursor: pointer; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .bulk-info { font-size: 13px; font-weight: 600; color: #00695c; }
+  .toolbar button { padding: 6px 14px; border-radius: 4px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .toolbar .btn-bulk { background: #00695c; color: #fff; }
+  .toolbar .btn-bulk:hover { background: #00796b; }
+  .toolbar .btn-bulk-danger { background: #bf2600; color: #fff; }
+  .toolbar .btn-bulk-danger:hover { background: #de350b; }
+  .toolbar .btn-clear { background: #f4f5f7; color: #42526e; }
+  .toolbar .btn-clear:hover { background: #ebecf0; }
+  .bulk-actions { display: none; align-items: center; gap: 8px; }
+  .bulk-actions.visible { display: flex; }
+
+  /* Close button in rows */
+  .close-btn { background: none; border: none; color: #97a0af; font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 3px; line-height: 1; }
+  .close-btn:hover { background: #ffebe6; color: #bf2600; }
+
+  /* Checkbox in rows */
+  .row-checkbox { margin: 0; cursor: pointer; }
+
+  /* Transition popover */
+  .transition-popover { position: fixed; z-index: 1100; background: #fff; border: 1px solid #dfe1e6;
+    border-radius: 6px; box-shadow: 0 4px 12px rgba(9,30,66,.15); padding: 8px 0; min-width: 200px; font-size: 13px; }
+  .transition-popover .trans-item { padding: 6px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .transition-popover .trans-item:hover { background: #f4f5f7; }
+  .transition-popover .trans-header { padding: 6px 14px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #5e6c84; }
+  .transition-popover .resolution-sub { padding: 4px 14px 4px 28px; font-size: 12px; cursor: pointer; color: #172b4d; }
+  .transition-popover .resolution-sub:hover { background: #f4f5f7; }
+
+  /* Bulk close dialog */
+  .bulk-dialog-overlay { display:none; position:fixed; inset:0; background:rgba(9,30,66,.54); z-index:2000; align-items:center; justify-content:center; }
+  .bulk-dialog { background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.25); padding:24px 28px; max-width:440px; width:90%; }
+  .bulk-dialog h3 { font-size:16px; font-weight:600; margin-bottom:16px; }
+  .bulk-dialog label { display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#5e6c84; margin-bottom:6px; }
+  .bulk-dialog select { width:100%; padding:8px 10px; border:1px solid #dfe1e6; border-radius:3px; font-size:13px; background:#fff; margin-bottom:14px; }
+  .bulk-dialog .dialog-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+  .bulk-dialog .dialog-actions button { padding:6px 16px; border-radius:4px; border:none; font-size:14px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<!-- CONFIRM DIALOG -->
+<div id="confirm-overlay">
+  <div id="confirm-dialog">
+    <h3 id="confirm-title">Discard All</h3>
+    <p id="confirm-msg">Discard all pending changes? This cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn-cancel" onclick="closeConfirm(false)">Cancel</button>
+      <button class="btn-confirm" onclick="closeConfirm(true)">Discard</button>
+    </div>
+  </div>
+</div>
+
+<!-- BULK CLOSE DIALOG -->
+<div id="bulk-close-overlay" class="bulk-dialog-overlay">
+  <div class="bulk-dialog">
+    <h3 id="bulk-close-title">Close Issues</h3>
+    <label for="bulk-close-resolution">Resolution (optional)</label>
+    <select id="bulk-close-resolution">
+      <option value="">-- none --</option>
+      <option value="Won't Do">Won't Do</option>
+      <option value="Duplicate">Duplicate</option>
+      <option value="Done">Done</option>
+      <option value="Cannot Reproduce">Cannot Reproduce</option>
+      <option value="Retired">Retired</option>
+    </select>
+    <div class="dialog-actions">
+      <button style="background:#f4f5f7;color:#172b4d;" onclick="closeBulkCloseDialog()">Cancel</button>
+      <button style="background:#bf2600;color:#fff;" onclick="confirmBulkClose()">Close Issues</button>
+    </div>
+  </div>
+</div>
+
+<!-- BULK MOVE DIALOG -->
+<div id="bulk-move-overlay" class="bulk-dialog-overlay">
+  <div class="bulk-dialog">
+    <h3>Move Issues</h3>
+    <label for="bulk-move-target">Target Sprint</label>
+    <select id="bulk-move-target"></select>
+    <div class="dialog-actions">
+      <button style="background:#f4f5f7;color:#172b4d;" onclick="closeBulkMoveDialog()">Cancel</button>
+      <button style="background:#00695c;color:#fff;" onclick="confirmBulkMove()">Move</button>
+    </div>
+  </div>
+</div>
+
+<!-- BULK PRIORITY DIALOG -->
+<div id="bulk-pri-overlay" class="bulk-dialog-overlay">
+  <div class="bulk-dialog">
+    <h3>Set Priority</h3>
+    <label for="bulk-pri-select">Priority</label>
+    <select id="bulk-pri-select"></select>
+    <div class="dialog-actions">
+      <button style="background:#f4f5f7;color:#172b4d;" onclick="closeBulkPriDialog()">Cancel</button>
+      <button style="background:#00695c;color:#fff;" onclick="confirmBulkPri()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- STARTUP CHECK OVERLAY -->
+<div id="startup-overlay">
+  <div id="startup-card">
+    <h2>Checking required services...</h2>
+    <div class="svc-row" id="svc-server">
+      <div class="svc-icon" id="svc-server-icon">&horbar;</div>
+      <div class="svc-body">
+        <div class="svc-name">backlog-server.py</div>
+        <div class="svc-hint" id="svc-server-hint">Connecting to localhost:5001...</div>
+      </div>
+    </div>
+    <div class="svc-row" id="svc-jira">
+      <div class="svc-icon" id="svc-jira-icon">&horbar;</div>
+      <div class="svc-body">
+        <div class="svc-name">Jira API</div>
+        <div class="svc-hint" id="svc-jira-hint">Waiting for server...</div>
+      </div>
+    </div>
+    <div class="svc-row">
+      <div class="svc-icon" id="svc-docker-icon">&horbar;</div>
+      <div class="svc-body">
+        <div class="svc-name">Docker Desktop <span style="font-weight:400;color:#5e6c84;">(mcp-jira)</span></div>
+        <div class="svc-hint" id="svc-docker-hint">Checking...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div style="display:flex;align-items:baseline;">
+    <h1 id="page-title">Backlog Sweeper</h1>
+    <div class="meta">
+      <span id="meta-board">Loading...</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:4px;align-items:center;">
+    <button id="settings-btn" title="Settings" style="background:none;border:none;color:rgba(255,255,255,0.9);font-size:28px;cursor:pointer;padding:6px 10px;border-radius:6px;transition:background .2s;" onmouseenter="this.style.background='rgba(255,255,255,0.15)'" onmouseleave="this.style.background='none'" onclick="openSettings()">&#9881;</button>
+    <button id="refresh-btn" title="Refresh from Jira" style="background:none;border:none;color:rgba(255,255,255,0.9);font-size:16px;font-weight:600;cursor:pointer;padding:6px 12px;border-radius:6px;transition:background .2s;font-family:inherit;" onmouseenter="this.style.background='rgba(255,255,255,0.15)'" onmouseleave="this.style.background='none'" onclick="refreshTasks(false)">&#8635; Refresh</button>
+  </div>
+</div>
+
+<div class="detail-wrapper">
+<div class="container">
+
+  <!-- STICKY: STATS + TOOLBAR -->
+  <div class="sticky-top">
+    <div class="stats-bar">
+      <div class="stat highlight">
+        <div class="val" id="stat-total">0</div>
+        <div class="lbl">Total Issues</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="stat-bugs">0</div>
+        <div class="lbl">Bugs</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="stat-stories">0</div>
+        <div class="lbl">Stories</div>
+      </div>
+      <div class="stat danger">
+        <div class="val" id="stat-stale">0</div>
+        <div class="lbl">Stale &gt;90d</div>
+      </div>
+      <div class="stat good">
+        <div class="val" id="stat-sp">0</div>
+        <div class="lbl">Story Points</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <input type="text" id="search-input" placeholder="Search key or summary..." oninput="onSearchInput()">
+      <label style="font-size:12px;color:#5e6c84;margin-left:4px;">Sort:</label>
+      <select id="global-sort" onchange="globalSort(this.value)">
+        <option value="">Default</option>
+        <option value="lru">Least Recently Updated</option>
+        <option value="mru">Most Recently Updated</option>
+        <option value="oldest">Oldest Created First</option>
+        <option value="newest">Newest Created First</option>
+        <option value="sp-desc">SP High to Low</option>
+      </select>
+      <span class="spacer"></span>
+      <div class="bulk-actions" id="bulk-actions">
+        <span class="bulk-info" id="bulk-info">0 selected</span>
+        <button class="btn-bulk" onclick="bulkMove()">Move</button>
+        <button class="btn-bulk-danger" onclick="bulkClose()">Close</button>
+        <button class="btn-clear" onclick="clearSelection()">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCROLLABLE BACKLOG AREA -->
+  <div class="backlog-scroll">
+    <div id="backlog-container"></div>
+  </div>
+
+  <!-- PENDING CHANGES PANEL — fixed footer of left pane -->
+  <div id="pending-panel">
+    <div id="pending-header">
+      <h3><span id="pending-chevron">&#9654;</span> Pending Jira Changes</h3>
+      <span id="pending-count">0</span>
+    </div>
+    <div id="pending-body" style="display:none;">
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+        <button id="apply-btn" onclick="applyToJira()">Apply to Jira</button>
+        <span style="flex:1;"></span>
+        <button id="discard-btn" onclick="discardAll()">Discard All</button>
+      </div>
+      <div id="apply-status">
+        <p id="apply-status-text">Changes queued locally &mdash; click Apply to sync with Jira.</p>
+        <div id="apply-progress" style="display:none;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#5e6c84;margin-bottom:4px;">
+            <span id="apply-progress-text">Applying...</span>
+            <span id="apply-progress-pct"></span>
+          </div>
+          <div style="height:12px;border-radius:6px;background:#ebecf0;overflow:hidden;">
+            <div id="apply-progress-fill" style="height:100%;border-radius:6px;width:0%;background:#006644;transition:width .4s;"></div>
+          </div>
+        </div>
+      </div>
+      <ul id="pending-list"></ul>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<!-- RESIZE HANDLE -->
+<div id="detail-resize-handle"></div>
+
+<!-- ISSUE DETAIL PANEL -->
+<div id="detail-panel">
+  <div class="detail-loading" id="detail-loading">Loading issue details...</div>
+  <div id="detail-content"></div>
+</div>
+
+</div><!-- /detail-wrapper -->
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- SETTINGS MODAL -->
+<div id="settings-overlay" style="display:none;position:fixed;inset:0;background:rgba(9,30,66,.54);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:8px;box-shadow:0 8px 24px rgba(9,30,66,.25);width:480px;max-height:80vh;overflow-y:auto;padding:28px 32px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h2 style="font-size:18px;font-weight:600;color:#172b4d;margin:0;">Settings</h2>
+      <button onclick="closeSettings()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#5e6c84;padding:0 4px;">&times;</button>
+    </div>
+
+    <!-- Jira Project -->
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Jira Project</label>
+      <input id="settings-project-key" type="text" placeholder="e.g. FDATA" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;">
+    </div>
+
+    <!-- Team dropdown -->
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Team</label>
+      <select id="settings-team-select" style="width:100%;padding:8px 10px;border:1px solid #dfe1e6;border-radius:3px;font-size:13px;box-sizing:border-box;background:#fff;">
+        <option value="">-- select a team --</option>
+      </select>
+      <div id="settings-team-select-status" style="margin-top:4px;font-size:12px;color:#5e6c84;min-height:16px;"></div>
+    </div>
+
+    <!-- Board Picker -->
+    <div style="margin-bottom:20px;">
+      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Jira Board</label>
+      <div id="settings-board-selected" style="display:none;align-items:center;gap:8px;margin-bottom:6px;">
+        <span id="settings-board-selected-text" style="font-size:13px;color:#006644;font-weight:600;"></span>
+        <a href="#" id="settings-board-change" style="font-size:12px;color:#0052cc;text-decoration:none;" onclick="event.preventDefault();showBoardList();">Change</a>
+      </div>
+      <div id="settings-board-list" style="border:1px solid #dfe1e6;border-radius:3px;min-height:40px;max-height:160px;overflow-y:auto;font-size:13px;background:#fafbfc;">
+        <span style="color:#5e6c84;padding:8px 12px;display:block;">Select a team above to see boards</span>
+      </div>
+    </div>
+
+    <!-- Backlog Sprints -->
+    <div style="margin-bottom:24px;">
+      <label style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#5e6c84;display:block;margin-bottom:6px;">Backlog Sprints</label>
+      <div id="settings-backlog-list" style="border:1px solid #dfe1e6;border-radius:3px;padding:8px 12px;min-height:40px;font-size:13px;background:#fafbfc;max-height:180px;overflow-y:auto;">
+        <span style="color:#5e6c84;">Available after Jira connects</span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button onclick="closeSettings()" style="background:transparent;color:#42526e;border:1px solid #dfe1e6;border-radius:3px;padding:6px 16px;font-size:13px;cursor:pointer;">Cancel</button>
+      <button onclick="saveSettings()" style="background:#00695c;color:#fff;border:none;border-radius:3px;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API_BASE = 'http://localhost:5001';
+  var JIRA_URL = ''; // populated from /api/health response
+
+  var teamConfig = { team: [] };
+  var pendingMoves = {};
+  var pendingEdits = {};
+  var pendingTransitions = {};
+  var sectionFilters = {};
+  var selectedIssues = new Set();
+  var SPRINT_NAMES = {};
+  var JIRA_PRIORITIES = [];
+  var cachedIssueTypes = [];
+  var dragRow = null;
+  var toastTimer = null;
+
+  // Issue detail panel state
+  var detailCache = {};
+  var activeDetailKey = null;
+  var isDragging = false;
+
+  // Board picker state
+  var boardPickerList = [];
+  var selectedBoardId = null;
+  var selectedBoardName = '';
+  var settingsBacklogPreview = null;
+
+  // Backlog state
+  var allBacklogs = {};
+  var selectedBacklogs = {};
+  var DEFAULT_INCLUDED_TYPES = ['Bug', 'Spike', 'Story', 'Sub-task', 'Task'];
+  var sectionShowClosed = {}; // {filterKey: true/false} — defaults to false (hide closed)
+  var collapsedBacklogs = {}; // {sprintId: true} — persisted in backlog-prefs.json
+
+  // Transition cache: { issueType: [{id, name, hasScreen, ...}] }
+  var transitionCache = {};
+
+  // ── Utility ──
+  function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function flashCell(el) {
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+
+  function showToast(msg, type) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = type || 'info';
+    el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.style.display = 'none'; }, 4000);
+  }
+
+  function sprintName(id) {
+    if (id === 'backlog') return 'Backlog';
+    return SPRINT_NAMES[id] || (id === 0 ? 'Unassigned' : 'Sprint ' + id);
+  }
+
+  function jiraLink(key) {
+    if (JIRA_URL) return JIRA_URL + '/browse/' + key;
+    return '#';
+  }
+
+  // ── Staleness ──
+  function daysSince(isoDate) {
+    if (!isoDate) return 9999;
+    return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
+  }
+
+  function relativeTime(days) {
+    if (days < 1) return '<1d';
+    return days + 'd';
+  }
+
+  function ageClass(days) {
+    if (days < 30) return 'fresh';
+    if (days < 90) return 'aging';
+    return 'stale';
+  }
+
+  // ── localStorage persistence ──
+  function savePendingToStorage() {
+    try {
+      localStorage.setItem('backlogsweeper-pending', JSON.stringify({
+        moves: pendingMoves,
+        edits: pendingEdits,
+        transitions: pendingTransitions
+      }));
+    } catch (e) {}
+  }
+
+  function loadPendingFromStorage() {
+    try {
+      var raw = localStorage.getItem('backlogsweeper-pending');
+      if (!raw) return;
+      var data = JSON.parse(raw);
+      if (data.moves) pendingMoves = data.moves;
+      if (data.edits) pendingEdits = data.edits;
+      if (data.transitions) pendingTransitions = data.transitions;
+    } catch (e) {}
+  }
+
+  function clearPendingStorage() {
+    localStorage.removeItem('backlogsweeper-pending');
+  }
+
+  // ── Custom confirm dialog ──
+  var confirmCallback = null;
+  window.closeConfirm = function (ok) {
+    document.getElementById('confirm-overlay').style.display = 'none';
+    if (ok && confirmCallback) confirmCallback();
+    confirmCallback = null;
+  };
+
+  function showConfirm(title, msg, btnLabel, cb) {
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-msg').textContent = msg;
+    document.querySelector('#confirm-dialog .btn-confirm').textContent = btnLabel;
+    confirmCallback = cb;
+    document.getElementById('confirm-overlay').style.display = 'flex';
+  }
+
+  // ── Badge helpers ──
+  function typeBadge(type) {
+    var cls = 'badge ';
+    switch ((type || '').toLowerCase()) {
+      case 'story': cls += 'badge-story'; break;
+      case 'bug': cls += 'badge-bug'; break;
+      case 'spike': case 'epic': cls += 'badge-spike'; break;
+      default: cls += 'badge-todo';
+    }
+    return '<span class="' + cls + '">' + escHtml(type) + '</span>';
+  }
+
+  function statusBadge(status) {
+    var s = (status || '').toLowerCase();
+    var cls = 'badge ';
+    if (s.indexOf('done') !== -1 || s.indexOf('closed') !== -1 || s.indexOf('resolved') !== -1) cls += 'badge-done';
+    else if (s.indexOf('progress') !== -1) cls += 'badge-progress';
+    else if (s.indexOf('block') !== -1) cls += 'badge-blocked';
+    else if (s.indexOf('review') !== -1 || s.indexOf('staging') !== -1) cls += 'badge-staging';
+    else cls += 'badge-todo';
+    return '<span class="' + cls + '">' + escHtml(status) + '</span>';
+  }
+
+  function priIconHtml(issue) {
+    var iconPath = issue.priority_icon_local || '';
+    if (!iconPath && JIRA_PRIORITIES.length) {
+      for (var i = 0; i < JIRA_PRIORITIES.length; i++) {
+        if (JIRA_PRIORITIES[i].name === issue.priority) {
+          iconPath = JIRA_PRIORITIES[i].localIcon || '';
+          break;
+        }
+      }
+    }
+    return iconPath ? '<img src="' + escHtml(iconPath) + '" class="pri-icon"> ' : '';
+  }
+
+  var PRI_CLASS = { Critical: 'pri-critical', Blocker: 'pri-critical', Showstopper: 'pri-critical', Major: 'pri-major', Minor: 'pri-minor', Trivial: 'pri-minor' };
+  var PRIORITY_ORDER = { Showstopper: 0, Critical: 1, Blocker: 1, Major: 2, Minor: 3, Trivial: 4, None: 5, '': 6 };
+
+  // ── Build issue row ──
+  function buildIssueRow(issue, sprintId) {
+    var sp = issue.sp != null ? parseFloat(issue.sp) : null;
+    var reporter = issue.reporter_display || '';
+    var updatedDays = daysSince(issue.updated);
+    var createdDays = daysSince(issue.created);
+    var ageCls = ageClass(updatedDays);
+    var createdCls = ageClass(createdDays);
+
+    var tr = document.createElement('tr');
+    tr.draggable = true;
+    tr.dataset.key = issue.key;
+    tr.dataset.sp = sp != null ? sp : '';
+    tr.dataset.reporter = reporter;
+    tr.dataset.priority = issue.priority || '';
+    tr.dataset.priorityId = issue.priority_id || '';
+    tr.dataset.issueType = issue.type || '';
+    tr.dataset.sourceSprint = String(sprintId || issue.sprint_id || '');
+    tr.dataset.epicKey = issue.epic_key || '';
+    tr.dataset.epicName = issue.epic_name || '';
+    tr.dataset.updated = issue.updated || '';
+    tr.dataset.created = issue.created || '';
+    tr.dataset.ageDays = updatedDays;
+    tr.dataset.status = issue.status || '';
+
+    if (updatedDays >= 90) {
+      tr.classList.add('stale-row');
+    }
+
+    var isEpic = (issue.type || '').toLowerCase() === 'epic';
+    var expandIcon = isEpic ? '<span class="epic-expand-icon">&#9654;</span>' : '';
+    var epicCell = issue.epic_key
+      ? '<a href="' + jiraLink(issue.epic_key) + '" target="_blank" title="' + escHtml(issue.epic_name) + '">' + escHtml(issue.epic_name) + '</a>'
+      : '';
+
+    tr.innerHTML =
+      '<td style="text-align:center;"><input type="checkbox" class="row-checkbox" data-key="' + escHtml(issue.key) + '"></td>' +
+      '<td>' + expandIcon + '<a href="' + jiraLink(issue.key) + '" target="_blank">' + escHtml(issue.key) + '</a></td>' +
+      '<td>' + escHtml(issue.summary) + '</td>' +
+      '<td class="epic-cell">' + epicCell + '</td>' +
+      '<td>' + typeBadge(issue.type) + '</td>' +
+      '<td>' + escHtml(reporter) + '</td>' +
+      '<td class="num">' + (sp != null ? sp : '\u2014') + '</td>' +
+      '<td class="' + (PRI_CLASS[issue.priority] || '') + '">' + priIconHtml(issue) + escHtml(issue.priority) + '</td>' +
+      '<td>' + statusBadge(issue.status) + '</td>' +
+      '<td class="age-' + createdCls + '"><span class="age-dot age-dot-' + createdCls + '"></span>' + relativeTime(createdDays) + '</td>' +
+      '<td class="age-' + ageCls + '"><span class="age-dot age-dot-' + ageCls + '"></span>' + relativeTime(updatedDays) + '</td>' +
+      '<td style="width:32px;"><button class="close-btn" title="Close issue" data-key="' + escHtml(issue.key) + '">&times;</button></td>';
+
+    if (isEpic) {
+      tr.classList.add('epic-expandable');
+      tr.addEventListener('click', function (e) {
+        if (e.target.closest('a') || e.target.closest('input') || e.target.closest('button') || e.target.closest('select') || e.target.closest('.pri-picker')) return;
+        toggleEpicExpand(tr);
+      });
+    }
+
+    // Wire checkbox
+    var cb = tr.querySelector('.row-checkbox');
+    cb.addEventListener('change', function () {
+      if (this.checked) {
+        selectedIssues.add(issue.key);
+      } else {
+        selectedIssues.delete(issue.key);
+      }
+      updateBulkActions();
+    });
+
+    // Wire close button
+    var closeBtn = tr.querySelector('.close-btn');
+    closeBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      showClosePopover(tr, this);
+    });
+
+    // Wire detail panel click (non-epic rows only; epics use expand)
+    if (!isEpic) {
+      tr.addEventListener('click', function (e) {
+        if (e.target.closest('a') || e.target.closest('input') || e.target.closest('button') ||
+            e.target.closest('select') || e.target.closest('.pri-picker') ||
+            e.target.closest('.sp-edit') || e.target.closest('.assignee-edit')) return;
+        if (isDragging) return;
+        openDetailPanel(issue.key);
+      });
+    }
+
+    return tr;
+  }
+
+  // ── Close popover (quick close) ──
+  var activeClosePopover = null;
+
+  function closeActivePopover() {
+    if (activeClosePopover) {
+      activeClosePopover.remove();
+      activeClosePopover = null;
+    }
+  }
+
+  function showClosePopover(row, btnEl) {
+    closeActivePopover();
+    var key = row.dataset.key;
+    var issueType = row.dataset.issueType;
+
+    // Check cache
+    if (transitionCache[issueType]) {
+      renderClosePopover(row, btnEl, transitionCache[issueType]);
+      return;
+    }
+
+    // Fetch transitions
+    fetch(API_BASE + '/api/transitions?key=' + encodeURIComponent(key), { signal: AbortSignal.timeout(10000) })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var transitions = data.transitions || [];
+        transitionCache[issueType] = transitions;
+        renderClosePopover(row, btnEl, transitions);
+      })
+      .catch(function () {
+        showToast('Could not fetch transitions for ' + key, 'error');
+      });
+  }
+
+  function renderClosePopover(row, btnEl, transitions) {
+    var pop = document.createElement('div');
+    pop.className = 'transition-popover';
+
+    var header = document.createElement('div');
+    header.className = 'trans-header';
+    header.textContent = 'Close ' + row.dataset.key;
+    pop.appendChild(header);
+
+    // Find the close transition (server will chain if not directly available)
+    var closeTrans = null;
+    for (var i = 0; i < transitions.length; i++) {
+      if (transitions[i].name.toLowerCase().indexOf('close') !== -1) { closeTrans = transitions[i]; break; }
+    }
+    // Fallback: use first transition — the server handles chaining
+    if (!closeTrans && transitions.length > 0) closeTrans = transitions[0];
+    var transId = closeTrans ? closeTrans.id : '';
+    var transName = closeTrans ? closeTrans.name : 'Close Issue';
+
+    var RESOLUTIONS = ['Won\'t Do', 'Duplicate', 'Done', 'Cannot Reproduce', 'Retired'];
+
+    RESOLUTIONS.forEach(function (res) {
+      var item = document.createElement('div');
+      item.className = 'trans-item';
+      item.textContent = res;
+      item.addEventListener('click', function (e) {
+        e.stopPropagation();
+        queueTransition(row.dataset.key, transId, transName, res);
+        closeActivePopover();
+      });
+      pop.appendChild(item);
+    });
+
+    var noRes = document.createElement('div');
+    noRes.className = 'trans-item';
+    noRes.style.color = '#97a0af';
+    noRes.textContent = '(no resolution)';
+    noRes.addEventListener('click', function (e) {
+      e.stopPropagation();
+      queueTransition(row.dataset.key, transId, transName, '');
+      closeActivePopover();
+    });
+    pop.appendChild(noRes);
+
+    document.body.appendChild(pop);
+    var rect = btnEl.getBoundingClientRect();
+    pop.style.left = (rect.left - pop.offsetWidth) + 'px';
+    if (rect.top + pop.offsetHeight > window.innerHeight) {
+      pop.style.top = (window.innerHeight - pop.offsetHeight - 8) + 'px';
+    } else {
+      pop.style.top = rect.top + 'px';
+    }
+    activeClosePopover = pop;
+
+    setTimeout(function () {
+      document.addEventListener('click', function handler(e) {
+        if (!pop.contains(e.target)) {
+          closeActivePopover();
+          document.removeEventListener('click', handler);
+        }
+      });
+    }, 0);
+  }
+
+  function queueTransition(key, transitionId, transitionName, resolution) {
+    pendingTransitions[key] = {
+      transition_id: transitionId,
+      transition_name: transitionName,
+      resolution: resolution || ''
+    };
+    savePendingToStorage();
+    renderPendingPanel();
+
+    // Visual feedback: dim the row
+    var row = document.querySelector('tr[data-key="' + key + '"]:not(.epic-child-row)');
+    if (row) {
+      row.style.opacity = '0.5';
+      row.style.textDecoration = 'line-through';
+    }
+    showToast(key + ' queued for ' + transitionName + (resolution ? ' (' + resolution + ')' : ''), 'info');
+  }
+
+  // ── Issue Detail Panel ──
+
+  function _strip_pri_name_js(name) {
+    var stripped = (name || '').replace(/^\d+[\s.\-]+\s*/, '');
+    var aliases = {'Standard': 'Minor'};
+    return aliases[stripped] || stripped;
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return Math.round(bytes / 1024) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function openDetailPanel(issueKey) {
+    // Highlight the clicked row, unhighlight previous
+    if (activeDetailKey) {
+      document.querySelectorAll('tr[data-key="' + activeDetailKey + '"]').forEach(function (r) { r.classList.remove('detail-active'); });
+    }
+    activeDetailKey = issueKey;
+    document.querySelectorAll('tr[data-key="' + issueKey + '"]').forEach(function (r) { r.classList.add('detail-active'); });
+
+    // Show panel
+    document.body.classList.add('detail-open');
+    var loading = document.getElementById('detail-loading');
+    var content = document.getElementById('detail-content');
+
+    // Check cache
+    if (detailCache[issueKey]) {
+      loading.style.display = 'none';
+      content.style.display = 'flex';
+      renderDetailContent(detailCache[issueKey]);
+      return;
+    }
+
+    // Show loading, hide content
+    loading.style.display = '';
+    content.style.display = 'none';
+
+    fetch(API_BASE + '/api/issue-detail?key=' + encodeURIComponent(issueKey), { signal: AbortSignal.timeout(15000) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        detailCache[issueKey] = data;
+        if (activeDetailKey === issueKey) {
+          loading.style.display = 'none';
+          content.style.display = 'flex';
+          renderDetailContent(data);
+        }
+      })
+      .catch(function (err) {
+        if (activeDetailKey === issueKey) {
+          loading.style.display = 'none';
+          content.style.display = 'flex';
+          content.innerHTML = '<div style="padding:20px;color:#bf2600;">Failed to load: ' + escHtml(err.message) + '</div>';
+        }
+      });
+  }
+
+  function closeDetailPanel() {
+    document.body.classList.remove('detail-open');
+    if (activeDetailKey) {
+      document.querySelectorAll('tr[data-key="' + activeDetailKey + '"]').forEach(function (r) { r.classList.remove('detail-active'); });
+    }
+    activeDetailKey = null;
+    document.getElementById('detail-content').innerHTML = '';
+    document.getElementById('detail-content').style.display = 'none';
+    document.getElementById('detail-loading').style.display = '';
+  }
+  window.closeDetailPanel = closeDetailPanel;
+
+  // ── Resize handle logic ──
+  (function () {
+    var handle = document.getElementById('detail-resize-handle');
+    var panel = document.getElementById('detail-panel');
+    var MIN_PANEL = 320;
+    var MAX_PANEL_RATIO = 0.6; // panel can't exceed 60% of window
+    var MIN_LEFT = 400;        // backlog side minimum
+
+    var startX, startW;
+
+    handle.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+      startX = e.clientX;
+      startW = panel.offsetWidth;
+      handle.classList.add('dragging');
+      document.body.classList.add('resizing');
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+
+    function onMouseMove(e) {
+      var dx = startX - e.clientX; // dragging left = bigger panel
+      var newW = startW + dx;
+      var maxPanel = Math.floor(window.innerWidth * MAX_PANEL_RATIO);
+      var maxByLeft = window.innerWidth - MIN_LEFT - 5; // 5 = handle width
+      var upper = Math.min(maxPanel, maxByLeft);
+      if (newW < MIN_PANEL) newW = MIN_PANEL;
+      if (newW > upper) newW = upper;
+      panel.style.width = newW + 'px';
+    }
+
+    function onMouseUp() {
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+  })();
+
+  function renderCollapsibleSection(title, bodyHtml) {
+    return '<div class="detail-section">' +
+      '<div class="detail-section-header">' + escHtml(title) +
+      '<span class="section-chevron">\u25BC</span></div>' +
+      '<div class="detail-section-body">' + bodyHtml + '</div></div>';
+  }
+
+  function renderDetailContent(data) {
+    var content = document.getElementById('detail-content');
+    var html = '';
+
+    // Header
+    html += '<div class="detail-header">';
+    html += '<div class="detail-header-top">';
+    html += '<a class="detail-key" href="' + jiraLink(data.key) + '" target="_blank">' + escHtml(data.key) + '</a>';
+    html += '<button class="detail-close" onclick="closeDetailPanel()" title="Close">&times;</button>';
+    html += '</div>';
+    html += '<div class="detail-summary">' + escHtml(data.summary) + '</div>';
+    html += '<div class="detail-status-row">';
+    html += statusBadge((data.status || {}).name || '') + ' ';
+    html += typeBadge((data.issuetype || {}).name || '');
+    html += '</div>';
+    html += '</div>';
+
+    // Two-column body: left (main) + right (sidebar)
+    html += '<div class="detail-columns">';
+
+    // ── Left column (main content) ──
+    html += '<div class="detail-col-main">';
+
+    html += renderCollapsibleSection('Details', renderDetailsFields(data));
+
+    var descHtml = data.description_html || '<em style="color:#97a0af;">No description</em>';
+    html += renderCollapsibleSection('Description', '<div class="detail-description">' + descHtml + '</div>');
+
+    if (data.attachment && data.attachment.length > 0) {
+      html += renderCollapsibleSection('Attachments (' + data.attachment.length + ')', renderAttachments(data.attachment));
+    }
+
+    if (data.issuelinks && data.issuelinks.length > 0) {
+      html += renderCollapsibleSection('Issue Links (' + data.issuelinks.length + ')', renderIssueLinks(data.issuelinks));
+    }
+
+    if (data.dev && ((data.dev.branches && data.dev.branches.length) || (data.dev.commits && data.dev.commits.length) || (data.dev.pullRequests && data.dev.pullRequests.length))) {
+      html += renderCollapsibleSection('Development', renderDevSection(data.dev));
+    }
+
+    var comments = (data.comment || {}).comments || [];
+    html += renderCollapsibleSection('Comments (' + comments.length + ')',
+      comments.length > 0 ? renderComments(comments) : '<em style="color:#97a0af;">No comments</em>');
+
+    html += '</div>';
+
+    // ── Right column (sidebar) ──
+    html += '<div class="detail-col-side">';
+    html += renderCollapsibleSection('People', renderPeopleSection(data));
+    html += renderCollapsibleSection('Dates', renderDatesSection(data));
+    html += renderCollapsibleSection('Agile', renderAgileSection(data));
+    html += '</div>';
+
+    html += '</div>';
+
+    content.innerHTML = html;
+
+    // Wire collapsible headers
+    content.querySelectorAll('.detail-section-header').forEach(function (header) {
+      header.addEventListener('click', function () {
+        header.closest('.detail-section').classList.toggle('collapsed');
+      });
+    });
+  }
+
+  function renderDetailsFields(data) {
+    var html = '';
+    function field(label, value) {
+      return '<div class="detail-field"><div class="detail-field-label">' + escHtml(label) +
+        '</div><div class="detail-field-value">' + (value || '<em style="color:#97a0af;">None</em>') + '</div></div>';
+    }
+    html += field('Type', typeBadge((data.issuetype || {}).name || ''));
+    var priName = _strip_pri_name_js((data.priority || {}).name || '');
+    var priIcon = '';
+    for (var i = 0; i < JIRA_PRIORITIES.length; i++) {
+      if (JIRA_PRIORITIES[i].name === priName) { priIcon = JIRA_PRIORITIES[i].localIcon || ''; break; }
+    }
+    html += field('Priority', (priIcon ? '<img src="' + escHtml(priIcon) + '" class="pri-icon"> ' : '') + escHtml(priName));
+    html += field('Resolution', data.resolution ? escHtml(data.resolution.name) : '<em style="color:#97a0af;">Unresolved</em>');
+    html += field('Fix Version/s', (data.fixVersions || []).map(function (v) { return escHtml(v.name); }).join(', ') || null);
+    html += field('Affects Version/s', (data.versions || []).map(function (v) { return escHtml(v.name); }).join(', ') || null);
+    html += field('Component/s', (data.components || []).map(function (c) { return escHtml(c.name); }).join(', ') || null);
+    var labels = (data.labels || []).map(function (l) { return '<span class="badge badge-todo">' + escHtml(l) + '</span>'; }).join(' ');
+    html += field('Labels', labels || null);
+    var team = data.customfield_19700;
+    if (team && Array.isArray(team) && team.length > 0) {
+      html += field('Team', team.map(function (t) { return escHtml(t.value || t); }).join(', '));
+    }
+    html += field('Story Points', data.customfield_10130 != null ? String(data.customfield_10130) : null);
+    if (data.customfield_12780) {
+      html += field('Epic Link', '<a href="' + jiraLink(data.customfield_12780) + '" target="_blank">' + escHtml(data.customfield_12780) + '</a>');
+    }
+    return html;
+  }
+
+  function renderPeopleSection(data) {
+    var html = '';
+    function personRow(label, person) {
+      if (!person) return '<div class="detail-field"><div class="detail-field-label">' + escHtml(label) + '</div><div class="detail-field-value"><em style="color:#97a0af;">Unassigned</em></div></div>';
+      var avatar = (person.avatarUrls || {})['48x48'] || '';
+      return '<div class="detail-field"><div class="detail-field-label">' + escHtml(label) + '</div>' +
+        '<div class="detail-field-value"><div class="detail-person">' +
+        (avatar ? '<img class="detail-avatar" src="' + escHtml(avatar) + '" onerror="this.style.display=\'none\'">' : '') +
+        escHtml(person.displayName || '') + '</div></div></div>';
+    }
+    html += personRow('Assignee', data.assignee);
+    html += personRow('Reporter', data.reporter);
+    return html;
+  }
+
+  function renderDatesSection(data) {
+    var html = '';
+    function dateField(label, isoDate) {
+      if (!isoDate) return '';
+      var days = daysSince(isoDate);
+      var d = new Date(isoDate);
+      var formatted = d.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}) +
+        ' ' + d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+      var cls = ageClass(days);
+      return '<div class="detail-field"><div class="detail-field-label">' + escHtml(label) +
+        '</div><div class="detail-field-value">' + escHtml(formatted) +
+        ' <span class="age-' + cls + '">(' + relativeTime(days) + ')</span></div></div>';
+    }
+    html += dateField('Created', data.created);
+    html += dateField('Updated', data.updated);
+    html += dateField('Resolved', data.resolutiondate);
+    return html;
+  }
+
+  function renderAttachments(attachments) {
+    var html = '';
+    attachments.forEach(function (att) {
+      var size = att.size ? formatFileSize(att.size) : '';
+      html += '<div class="detail-attachment">' +
+        '<span>\uD83D\uDCCE</span> ' + escHtml(att.filename) +
+        (size ? ' <span class="detail-attachment-size">(' + size + ')</span>' : '') + '</div>';
+    });
+    return html;
+  }
+
+  function renderIssueLinks(links) {
+    var html = '';
+    links.forEach(function (link) {
+      var typeInfo = link.type || {};
+      var linkedIssue, direction;
+      if (link.outwardIssue) { linkedIssue = link.outwardIssue; direction = typeInfo.outward || typeInfo.name || ''; }
+      else if (link.inwardIssue) { linkedIssue = link.inwardIssue; direction = typeInfo.inward || typeInfo.name || ''; }
+      else return;
+      var statusName = (linkedIssue.status || {}).name || '';
+      html += '<div class="detail-link-item">' +
+        '<span class="detail-link-type">' + escHtml(direction) + '</span> ' +
+        '<a href="' + jiraLink(linkedIssue.key) + '" target="_blank">' + escHtml(linkedIssue.key) + '</a> ' +
+        '<span style="color:#5e6c84;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(linkedIssue.summary || '') + '</span> ' +
+        (statusName ? statusBadge(statusName) : '') + '</div>';
+    });
+    return html;
+  }
+
+  function renderDevSection(dev) {
+    var html = '';
+    var branches = dev.branches || [];
+    var commits = dev.commits || [];
+    var prs = dev.pullRequests || [];
+
+    if (branches.length > 0) {
+      html += '<div class="dev-item"><span class="dev-count">' + branches.length + '</span> branch' + (branches.length !== 1 ? 'es' : '') + '</div>';
+      branches.forEach(function (b) {
+        var label = escHtml(b.name || 'branch');
+        html += '<div class="dev-sub-item">' + (b.url ? '<a href="' + escHtml(b.url) + '" target="_blank">' + label + '</a>' : label) + '</div>';
+      });
+    }
+    if (commits.length > 0) {
+      html += '<div class="dev-item"><span class="dev-count">' + commits.length + '</span> commit' + (commits.length !== 1 ? 's' : '') + '</div>';
+      commits.forEach(function (c) {
+        var label = escHtml(c.id || '') + ' ' + escHtml(c.message || '');
+        html += '<div class="dev-sub-item">' + (c.url ? '<a href="' + escHtml(c.url) + '" target="_blank">' + label + '</a>' : label) + '</div>';
+      });
+    }
+    if (prs.length > 0) {
+      html += '<div class="dev-item"><span class="dev-count">' + prs.length + '</span> pull request' + (prs.length !== 1 ? 's' : '') + '</div>';
+      prs.forEach(function (p) {
+        var label = escHtml(p.name || 'PR');
+        var statusBadge = p.status ? ' <span class="badge badge-' + (p.status === 'MERGED' ? 'done' : 'progress') + '">' + escHtml(p.status) + '</span>' : '';
+        html += '<div class="dev-sub-item">' + (p.url ? '<a href="' + escHtml(p.url) + '" target="_blank">' + label + '</a>' : label) + statusBadge + '</div>';
+      });
+    }
+    return html || '<em style="color:#97a0af;">No development activity</em>';
+  }
+
+  function renderAgileSection(data) {
+    var html = '';
+    if (data.sprint) {
+      var state = (data.sprint.state || '').toLowerCase();
+      var label = state === 'future' ? 'Future Sprint' : state === 'active' ? 'Active Sprint' : 'Sprint';
+      html += '<div class="detail-field"><div class="detail-field-label">' + label + '</div>' +
+        '<div class="detail-field-value">' + escHtml(data.sprint.name || '') + '</div></div>';
+    }
+    if (data.closedSprints && data.closedSprints.length > 0) {
+      html += '<div class="detail-field"><div class="detail-field-label">Completed</div>' +
+        '<div class="detail-field-value">' + data.closedSprints.map(function (s) { return escHtml(s.name || ''); }).join(', ') + '</div></div>';
+    }
+    return html || '<em style="color:#97a0af;">Not in any sprint</em>';
+  }
+
+  function renderComments(comments) {
+    var html = '';
+    comments.forEach(function (c) {
+      var author = c.author || {};
+      var avatar = (author.avatarUrls || {})['48x48'] || '';
+      var created = c.created ? new Date(c.created) : null;
+      var dateStr = created ? created.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}) +
+        ' ' + created.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : '';
+      var daysAgo = c.created ? daysSince(c.created) : 0;
+      html += '<div class="detail-comment">';
+      html += '<div class="detail-comment-header">';
+      if (avatar) html += '<img class="detail-avatar" src="' + escHtml(avatar) + '" onerror="this.style.display=\'none\'">';
+      html += '<span class="detail-comment-author">' + escHtml(author.displayName || 'Unknown') + '</span>';
+      html += '<span class="detail-comment-date">' + escHtml(dateStr) + ' (' + relativeTime(daysAgo) + ')</span>';
+      html += '</div>';
+      html += '<div class="detail-comment-body">' + (c.body_html || escHtml(c.body || '')) + '</div>';
+      html += '</div>';
+    });
+    return html;
+  }
+
+  // ── Bulk actions ──
+  function updateBulkActions() {
+    var count = selectedIssues.size;
+    var el = document.getElementById('bulk-actions');
+    var info = document.getElementById('bulk-info');
+    if (count > 0) {
+      el.classList.add('visible');
+      info.textContent = count + ' selected';
+    } else {
+      el.classList.remove('visible');
+    }
+  }
+
+  window.clearSelection = function () {
+    selectedIssues.clear();
+    document.querySelectorAll('.row-checkbox').forEach(function (cb) {
+      cb.checked = false;
+    });
+    updateBulkActions();
+  };
+
+  window.bulkMove = function () {
+    if (selectedIssues.size === 0) return;
+    var sel = document.getElementById('bulk-move-target');
+    sel.innerHTML = '';
+    var ids = Object.keys(SPRINT_NAMES);
+    ids.forEach(function (id) {
+      var opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = SPRINT_NAMES[id];
+      sel.appendChild(opt);
+    });
+    document.getElementById('bulk-move-overlay').style.display = 'flex';
+  };
+
+  window.closeBulkMoveDialog = function () {
+    document.getElementById('bulk-move-overlay').style.display = 'none';
+  };
+
+  window.confirmBulkMove = function () {
+    var targetId = document.getElementById('bulk-move-target').value;
+    if (!targetId) return;
+    var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + targetId + '"]');
+    if (!targetTbody) { showToast('Target sprint not found', 'error'); return; }
+
+    selectedIssues.forEach(function (key) {
+      var row = document.querySelector('tr[data-key="' + key + '"]:not(.epic-child-row)');
+      if (row && row.parentElement !== targetTbody) {
+        var summary = row.querySelectorAll('td')[2].textContent.trim();
+        targetTbody.appendChild(row);
+        queueMove(key, parseInt(targetId), row.dataset.sourceSprint, summary);
+      }
+    });
+
+    clearSelection();
+    closeBulkMoveDialog();
+    applyTypeFilter();
+    computeStats();
+    showToast('Issues moved', 'success');
+  };
+
+  window.bulkClose = function () {
+    if (selectedIssues.size === 0) return;
+    document.getElementById('bulk-close-title').textContent = 'Close ' + selectedIssues.size + ' Issues';
+    document.getElementById('bulk-close-resolution').value = 'Retired';
+    document.getElementById('bulk-close-overlay').style.display = 'flex';
+  };
+
+  window.closeBulkCloseDialog = function () {
+    document.getElementById('bulk-close-overlay').style.display = 'none';
+  };
+
+  window.confirmBulkClose = function () {
+    var resolution = document.getElementById('bulk-close-resolution').value;
+    var count = selectedIssues.size;
+
+    selectedIssues.forEach(function (key) {
+      queueTransition(key, '', 'Close Issue', resolution);
+    });
+
+    clearSelection();
+    closeBulkCloseDialog();
+    showToast(count + ' issues queued for Close Issue', 'success');
+  };
+
+  window.bulkPriority = function () {
+    if (selectedIssues.size === 0) return;
+    var sel = document.getElementById('bulk-pri-select');
+    sel.innerHTML = '';
+    var allowedPri = ['Showstopper', 'Critical', 'Major', 'Minor', 'None'];
+    allowedPri.forEach(function (name) {
+      var p = null;
+      for (var i = 0; i < JIRA_PRIORITIES.length; i++) {
+        if (JIRA_PRIORITIES[i].name === name) { p = JIRA_PRIORITIES[i]; break; }
+      }
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.dataset.id = p ? p.id : '';
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    document.getElementById('bulk-pri-overlay').style.display = 'flex';
+  };
+
+  window.closeBulkPriDialog = function () {
+    document.getElementById('bulk-pri-overlay').style.display = 'none';
+  };
+
+  window.confirmBulkPri = function () {
+    var sel = document.getElementById('bulk-pri-select');
+    var opt = sel.options[sel.selectedIndex];
+    if (!opt) return;
+    var priName = opt.value;
+    var priId = opt.dataset.id || '';
+
+    selectedIssues.forEach(function (key) {
+      var row = document.querySelector('tr[data-key="' + key + '"]:not(.epic-child-row)');
+      if (!row) return;
+      row.dataset.priority = priName;
+      row.dataset.priorityId = priId;
+      if (!pendingEdits[key]) pendingEdits[key] = {};
+      pendingEdits[key].priority = priName;
+      pendingEdits[key].priority_id = priId;
+      // Update visible priority cell
+      var priCell = row.querySelectorAll('td')[7];
+      if (priCell) {
+        var pInfo = null;
+        for (var i = 0; i < JIRA_PRIORITIES.length; i++) {
+          if (JIRA_PRIORITIES[i].name === priName) { pInfo = JIRA_PRIORITIES[i]; break; }
+        }
+        priCell.className = PRI_CLASS[priName] || '';
+        var iconHtml = pInfo && pInfo.localIcon ? '<img src="' + escHtml(pInfo.localIcon) + '" class="pri-icon"> ' : '';
+        priCell.innerHTML = iconHtml + escHtml(priName);
+      }
+    });
+
+    savePendingToStorage();
+    renderPendingPanel();
+    clearSelection();
+    closeBulkPriDialog();
+    showToast('Priority updated for ' + selectedIssues.size + ' issues', 'success');
+  };
+
+  // ── Search ──
+  window.onSearchInput = function () {
+    var term = document.getElementById('search-input').value.trim().toLowerCase();
+    document.querySelectorAll('#backlog-container tbody.droppable tr[data-key]:not(.epic-child-row)').forEach(function (row) {
+      if (!term) {
+        row.style.display = '';
+        return;
+      }
+      var key = (row.dataset.key || '').toLowerCase();
+      var summary = (row.querySelectorAll('td')[2] || {}).textContent || '';
+      summary = summary.toLowerCase();
+      var match = key.indexOf(term) !== -1 || summary.indexOf(term) !== -1;
+      row.style.display = match ? '' : 'none';
+    });
+    computeStats();
+    updateSectionNotes();
+  };
+
+  // ── Global Sort ──
+  window.globalSort = function (criterion) {
+    if (!criterion) {
+      // Reset: re-fetch would be ideal but just leave current order
+      return;
+    }
+    document.querySelectorAll('#backlog-container tbody.droppable').forEach(function (tbody) {
+      var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-key]:not(.epic-child-row):not(.epic-loading-row):not(.loading-row)'));
+      rows.sort(function (a, b) {
+        switch (criterion) {
+          case 'lru':
+            return new Date(a.dataset.updated || 0) - new Date(b.dataset.updated || 0);
+          case 'mru':
+            return new Date(b.dataset.updated || 0) - new Date(a.dataset.updated || 0);
+          case 'oldest':
+            return new Date(a.dataset.created || 0) - new Date(b.dataset.created || 0);
+          case 'newest':
+            return new Date(b.dataset.created || 0) - new Date(a.dataset.created || 0);
+          case 'sp-desc':
+            var spA = a.dataset.sp !== '' ? parseFloat(a.dataset.sp) : -1;
+            var spB = b.dataset.sp !== '' ? parseFloat(b.dataset.sp) : -1;
+            return spB - spA;
+          default:
+            return 0;
+        }
+      });
+      rows.forEach(function (r) { tbody.appendChild(r); });
+    });
+  };
+
+  // ── Summary stats ──
+  function computeStats() {
+    var total = 0, bugs = 0, stories = 0, stale = 0, sp = 0;
+    document.querySelectorAll('#backlog-container tbody.droppable tr[data-key]:not(.epic-child-row):not(.epic-loading-row)').forEach(function (row) {
+      if (row.style.display === 'none') return;
+      total++;
+      var type = (row.dataset.issueType || '').toLowerCase();
+      if (type === 'bug') bugs++;
+      if (type === 'story') stories++;
+      var days = parseInt(row.dataset.ageDays) || 0;
+      if (days >= 90) stale++;
+      var s = row.dataset.sp;
+      if (s !== '' && s != null) sp += parseFloat(s) || 0;
+    });
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-bugs').textContent = bugs;
+    document.getElementById('stat-stories').textContent = stories;
+    document.getElementById('stat-stale').textContent = stale;
+    document.getElementById('stat-sp').textContent = Math.round(sp);
+  }
+
+  function updateSectionNotes() {
+    document.querySelectorAll('#backlog-container .card[data-backlog-id]').forEach(function (card) {
+      var tbody = card.querySelector('tbody.droppable');
+      if (!tbody) return;
+      var sid = tbody.dataset.sprintId;
+      var rows = tbody.querySelectorAll('tr[data-key]:not(.loading-row):not(.epic-child-row):not(.epic-loading-row):not([style*="display: none"])');
+      var issueCount = rows.length;
+      var spTotal = 0;
+      rows.forEach(function (r) {
+        var s = r.dataset.sp;
+        if (s !== '' && s != null) spTotal += parseFloat(s) || 0;
+      });
+      var note = card.querySelector('.source-note');
+      if (note) {
+        note.textContent = issueCount + ' issues \u00B7 ' + Math.round(spTotal) + ' SP';
+      }
+    });
+    updateEmptyPlaceholders();
+  }
+
+  // ── Empty drop placeholder ──
+  function updateEmptyPlaceholders() {
+    document.querySelectorAll('#backlog-container tbody.droppable').forEach(function (tbody) {
+      var existing = tbody.querySelector('.empty-drop-placeholder');
+      var hasIssues = tbody.querySelector('tr[data-key]:not([style*="display: none"])');
+      var hasLoading = tbody.querySelector('.loading-row');
+      if (!hasIssues && !hasLoading) {
+        if (!existing) {
+          var tr = document.createElement('tr');
+          tr.className = 'empty-drop-placeholder';
+          tr.innerHTML = '<td colspan="12">Drop issues here</td>';
+          tbody.appendChild(tr);
+        }
+      } else if (existing) {
+        existing.remove();
+      }
+    });
+  }
+
+  // ── Column sorting ──
+  function getSortValue(row, field) {
+    if (field === 'epic') return (row.dataset.epicName || '').toLowerCase();
+    if (field === 'type') return (row.dataset.issueType || '').toLowerCase();
+    if (field === 'reporter') return (row.dataset.reporter || '').toLowerCase();
+    if (field === 'priority') return PRIORITY_ORDER[row.dataset.priority] != null ? PRIORITY_ORDER[row.dataset.priority] : 99;
+    if (field === 'created') return row.dataset.created || '';
+    if (field === 'updated') return row.dataset.updated || '';
+    if (field === 'sp') return row.dataset.sp !== '' ? parseFloat(row.dataset.sp) : -1;
+    if (field === 'status') return (row.dataset.status || '').toLowerCase();
+    return '';
+  }
+
+  function sortTable(th) {
+    var field = th.dataset.sort;
+    var thead = th.closest('thead');
+    var tbody = thead.nextElementSibling;
+    if (!tbody || !tbody.classList.contains('droppable')) return;
+
+    var asc = !th.classList.contains('sort-asc');
+    thead.querySelectorAll('th.sortable').forEach(function (h) {
+      h.classList.remove('sort-asc', 'sort-desc');
+    });
+    th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-key]:not(.epic-child-row):not(.epic-loading-row):not(.loading-row)'));
+    rows.sort(function (a, b) {
+      var va = getSortValue(a, field);
+      var vb = getSortValue(b, field);
+      if (va < vb) return asc ? -1 : 1;
+      if (va > vb) return asc ? 1 : -1;
+      return 0;
+    });
+    rows.forEach(function (r) { tbody.appendChild(r); });
+  }
+
+  function wireSortableHeader(th) {
+    th.addEventListener('click', function () { sortTable(th); });
+  }
+
+  // ── Per-section issue type filtering ──
+  var CLOSED_STATUSES = ['closed', 'resolved', 'done'];
+
+  function applySectionFilter(filterKey) {
+    var included = (sectionFilters[filterKey] || DEFAULT_INCLUDED_TYPES).map(function (t) { return t.toLowerCase(); });
+    var showClosed = !!sectionShowClosed[filterKey];
+    var tbody = document.querySelector('tbody.droppable[data-sprint-id="' + filterKey + '"]');
+    if (!tbody) return;
+    tbody.querySelectorAll('tr[data-issue-type]:not(.epic-child-row)').forEach(function (row) {
+      var t = row.dataset.issueType.toLowerCase();
+      var typeMatch = included.indexOf(t) !== -1;
+      var statusMatch = showClosed || CLOSED_STATUSES.indexOf((row.dataset.status || '').toLowerCase()) === -1;
+      var visible = typeMatch && statusMatch;
+      row.style.display = visible ? '' : 'none';
+      if (!visible && row.classList.contains('epic-expanded')) {
+        row.classList.remove('epic-expanded');
+        var next = row.nextElementSibling;
+        while (next && next.classList.contains('epic-child-row')) {
+          var toRemove = next;
+          next = next.nextElementSibling;
+          toRemove.remove();
+        }
+      }
+    });
+  }
+
+  function applyTypeFilter() {
+    document.querySelectorAll('#backlog-container .card[data-backlog-id]').forEach(function (card) {
+      applySectionFilter(card.dataset.backlogId);
+    });
+    computeStats();
+    updateSectionNotes();
+    updateFilterIconStates();
+  }
+
+  function updateFilterIconStates() {
+    var defaultSorted = DEFAULT_INCLUDED_TYPES.slice().sort().join(',').toLowerCase();
+    document.querySelectorAll('.filter-icon[data-filter-key]').forEach(function (icon) {
+      var key = icon.dataset.filterKey;
+      var current = (sectionFilters[key] || DEFAULT_INCLUDED_TYPES).slice().sort().join(',').toLowerCase();
+      var hasCustomFilter = current !== defaultSorted || !!sectionShowClosed[key];
+      icon.classList.toggle('active', hasCustomFilter);
+    });
+  }
+
+  function wireFilterIcon(icon) {
+    if (!icon) return;
+    icon.addEventListener('click', function (e) {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleFilterPopover(icon);
+    });
+  }
+
+  function toggleFilterPopover(iconEl) {
+    if (iconEl._filterPopover && iconEl._filterPopover.parentNode) {
+      iconEl._filterPopover.remove();
+      iconEl._filterPopover = null;
+      return;
+    }
+    document.querySelectorAll('.filter-popover').forEach(function (p) { p.remove(); });
+    document.querySelectorAll('.filter-icon').forEach(function (i) { i._filterPopover = null; });
+
+    var filterKey = iconEl.dataset.filterKey;
+    var included = sectionFilters[filterKey] || DEFAULT_INCLUDED_TYPES;
+    var includedLower = included.map(function (t) { return t.toLowerCase(); });
+
+    var types = cachedIssueTypes.length > 0 ? cachedIssueTypes : DEFAULT_INCLUDED_TYPES;
+    var pop = document.createElement('div');
+    pop.className = 'filter-popover';
+
+    types.forEach(function (name) {
+      var lbl = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = name;
+      cb.checked = includedLower.indexOf(name.toLowerCase()) !== -1;
+      cb.addEventListener('change', function () {
+        var checked = [];
+        pop.querySelectorAll('input[type="checkbox"]').forEach(function (c) {
+          if (c.checked) checked.push(c.value);
+        });
+        sectionFilters[filterKey] = checked;
+        applySectionFilter(filterKey);
+        computeStats();
+        updateSectionNotes();
+        updateFilterIconStates();
+        saveBacklogPrefs();
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(name));
+      pop.appendChild(lbl);
+    });
+
+    // Separator + "Show closed/resolved" toggle
+    var sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid #ebecf0;margin:4px 0;';
+    pop.appendChild(sep);
+    var closedLbl = document.createElement('label');
+    var closedCb = document.createElement('input');
+    closedCb.type = 'checkbox';
+    closedCb.checked = !!sectionShowClosed[filterKey];
+    closedCb.addEventListener('change', function () {
+      sectionShowClosed[filterKey] = closedCb.checked;
+      applySectionFilter(filterKey);
+      computeStats();
+      updateSectionNotes();
+      updateFilterIconStates();
+      saveBacklogPrefs();
+    });
+    closedLbl.appendChild(closedCb);
+    closedLbl.appendChild(document.createTextNode('Show closed / resolved'));
+    pop.appendChild(closedLbl);
+
+    document.body.appendChild(pop);
+    var rect = iconEl.getBoundingClientRect();
+    pop.style.left = rect.left + 'px';
+    var popHeight = pop.offsetHeight;
+    if (rect.bottom + 4 + popHeight > window.innerHeight) {
+      pop.style.top = (rect.top - popHeight - 4) + 'px';
+    } else {
+      pop.style.top = (rect.bottom + 4) + 'px';
+    }
+    iconEl._filterPopover = pop;
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.filter-icon') && !e.target.closest('.filter-popover')) {
+      document.querySelectorAll('.filter-popover').forEach(function (p) { p.remove(); });
+      document.querySelectorAll('.filter-icon').forEach(function (i) { i._filterPopover = null; });
+    }
+  });
+
+  // ── Drag and drop ──
+  function wireDragEvents(row) {
+    row.addEventListener('dragstart', function (e) {
+      isDragging = true;
+      dragRow = row;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.key);
+      setTimeout(function () { row.classList.add('dragging'); }, 0);
+    });
+    row.addEventListener('dragend', function () {
+      row.classList.remove('dragging');
+      dragRow = null;
+      isDragging = false;
+    });
+    row.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      showMoveMenu(row, e.clientX, e.clientY);
+    });
+  }
+
+  function wireDropEvents(tbody) {
+    tbody.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tbody.classList.add('drop-over');
+    });
+    tbody.addEventListener('dragleave', function (e) {
+      if (!tbody.contains(e.relatedTarget)) tbody.classList.remove('drop-over');
+    });
+    tbody.addEventListener('drop', function (e) { handleDrop(tbody, e); });
+  }
+
+  function handleDrop(tbody, e) {
+    e.preventDefault();
+    tbody.classList.remove('drop-over');
+    if (!dragRow) return;
+    if (dragRow.parentElement === tbody) return;
+
+    if (dragRow.classList.contains('epic-child-row')) {
+      moveEpicChildToBacklog(dragRow, tbody.dataset.sprintId);
+      dragRow = null;
+      return;
+    }
+
+    var rawSid = tbody.dataset.sprintId;
+    var targetSprintId = rawSid === 'backlog' ? 'backlog' : parseInt(rawSid);
+    tbody.appendChild(dragRow);
+    applyTypeFilter();
+    var summary = dragRow.querySelectorAll('td')[2].textContent.trim();
+    queueMove(dragRow.dataset.key, targetSprintId, dragRow.dataset.sourceSprint, summary);
+  }
+
+  // ── Right-click context menu ──
+  var activeCtxMenu = null;
+
+  function closeMoveMenu() {
+    if (activeCtxMenu) { activeCtxMenu.remove(); activeCtxMenu = null; }
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      closeMoveMenu();
+      closeActivePopover();
+      if (activeDetailKey) { closeDetailPanel(); return; }
+    }
+  });
+
+  function showMoveMenu(row, x, y) {
+    closeMoveMenu();
+    var currentSprintId = row.parentElement.dataset.sprintId;
+    var menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    var header = document.createElement('div');
+    header.className = 'ctx-menu-header';
+    header.textContent = 'Move to';
+    menu.appendChild(header);
+
+    var destinations = [];
+    document.querySelectorAll('#backlog-container .card[data-backlog-id]').forEach(function (card) {
+      var id = card.dataset.backlogId;
+      if (id === currentSprintId) return;
+      destinations.push({ id: id, name: sprintName(parseInt(id)) });
+    });
+
+    destinations.forEach(function (dest) {
+      var item = document.createElement('div');
+      item.className = 'ctx-menu-item';
+      item.textContent = dest.name;
+      item.addEventListener('click', function () {
+        var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + dest.id + '"]');
+        if (targetTbody && row.parentElement !== targetTbody) {
+          targetTbody.appendChild(row);
+          applyTypeFilter();
+          var summary = row.querySelectorAll('td')[2].textContent.trim();
+          queueMove(row.dataset.key, parseInt(dest.id), row.dataset.sourceSprint, summary);
+        }
+        closeMoveMenu();
+      });
+      menu.appendChild(item);
+    });
+
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    document.body.appendChild(menu);
+    var rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+    activeCtxMenu = menu;
+    setTimeout(function () {
+      document.addEventListener('click', closeMoveMenu, { once: true });
+    }, 0);
+  }
+
+  function showMoveMenuForEpicChild(row, x, y) {
+    closeMoveMenu();
+    var menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    var header = document.createElement('div');
+    header.className = 'ctx-menu-header';
+    header.textContent = 'Move to';
+    menu.appendChild(header);
+
+    var sourceSprint = row.dataset.sourceSprint || '0';
+    var destinations = [];
+    document.querySelectorAll('#backlog-container .card[data-backlog-id]').forEach(function (card) {
+      var id = card.dataset.backlogId;
+      if (id !== sourceSprint) destinations.push({ id: id, name: sprintName(parseInt(id)) });
+    });
+
+    destinations.forEach(function (dest) {
+      var item = document.createElement('div');
+      item.className = 'ctx-menu-item';
+      item.textContent = dest.name;
+      item.addEventListener('click', function () {
+        moveEpicChildToBacklog(row, dest.id);
+        closeMoveMenu();
+      });
+      menu.appendChild(item);
+    });
+
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    document.body.appendChild(menu);
+    var rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+    activeCtxMenu = menu;
+    setTimeout(function () {
+      document.addEventListener('click', closeMoveMenu, { once: true });
+    }, 0);
+  }
+
+  // ── Queue move ──
+  function queueMove(issueKey, targetSprintId, originalSprintId, summary) {
+    var origId = originalSprintId === 'backlog' ? 'backlog' : parseInt(originalSprintId);
+    if (String(targetSprintId) === String(origId)) {
+      delete pendingMoves[issueKey];
+    } else {
+      var truncated = summary && summary.length > 48 ? summary.slice(0, 47) + '\u2026' : (summary || '');
+      var src = sprintName(origId);
+      var dest = sprintName(targetSprintId);
+      var label = issueKey + ' \u00B7 ' + truncated + ' \u00B7 ' + src + ' \u2192 ' + dest;
+      pendingMoves[issueKey] = {
+        issueKey: issueKey,
+        targetSprintId: targetSprintId,
+        originalSprintId: origId,
+        label: label
+      };
+    }
+    savePendingToStorage();
+    renderPendingPanel();
+  }
+
+  // ── Epic expand/collapse ──
+  function collapseAllEpics() {
+    document.querySelectorAll('tr.epic-expanded').forEach(function (row) {
+      row.classList.remove('epic-expanded');
+    });
+    document.querySelectorAll('tr.epic-child-row, tr.epic-loading-row').forEach(function (r) { r.remove(); });
+  }
+
+  function toggleEpicExpand(epicRow) {
+    var key = epicRow.dataset.key;
+    var isExpanded = epicRow.classList.contains('epic-expanded');
+
+    if (isExpanded) {
+      epicRow.classList.remove('epic-expanded');
+      var next = epicRow.nextElementSibling;
+      while (next && (next.classList.contains('epic-child-row') || next.classList.contains('epic-loading-row'))) {
+        var toRemove = next;
+        next = next.nextElementSibling;
+        toRemove.remove();
+      }
+      return;
+    }
+
+    epicRow.classList.add('epic-expanded');
+    var loadingRow = document.createElement('tr');
+    loadingRow.className = 'epic-loading-row';
+    loadingRow.innerHTML = '<td colspan="12">Loading children\u2026</td>';
+    epicRow.after(loadingRow);
+
+    fetch(API_BASE + '/api/epic-children?key=' + encodeURIComponent(key))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        loadingRow.remove();
+        var children = data.children || [];
+        if (children.length === 0) {
+          var emptyRow = document.createElement('tr');
+          emptyRow.className = 'epic-child-row';
+          emptyRow.dataset.epicParent = key;
+          emptyRow.innerHTML = '<td colspan="12" style="color:#97a0af;font-style:italic;padding-left:32px;">No child issues</td>';
+          epicRow.after(emptyRow);
+          return;
+        }
+        for (var i = children.length - 1; i >= 0; i--) {
+          var childRow = buildEpicChildRow(children[i], key);
+          epicRow.after(childRow);
+        }
+      })
+      .catch(function (err) {
+        loadingRow.remove();
+        epicRow.classList.remove('epic-expanded');
+        showToast('Cannot fetch epic children \u2014 ' + err.message, 'error');
+      });
+  }
+
+  function buildEpicChildRow(child, epicKey) {
+    var sp = child.sp != null ? parseFloat(child.sp) : null;
+    var updatedDays = daysSince(child.updated);
+    var createdDays = daysSince(child.created);
+    var ageCls = ageClass(updatedDays);
+    var createdCls = ageClass(createdDays);
+    var tr = document.createElement('tr');
+    tr.className = 'epic-child-row';
+    tr.dataset.epicParent = epicKey;
+    tr.dataset.key = child.key;
+    tr.dataset.sp = sp != null ? sp : '';
+    tr.dataset.reporter = child.reporter_display || '';
+    tr.dataset.priority = child.priority || '';
+    tr.dataset.priorityId = child.priority_id || '';
+    tr.dataset.issueType = child.type || '';
+    tr.dataset.updated = child.updated || '';
+    tr.dataset.created = child.created || '';
+    tr.dataset.ageDays = updatedDays;
+
+    var sprintBadges = '';
+    var inBacklog = false;
+    var childSprints = child.sprints || [];
+
+    for (var s = 0; s < childSprints.length; s++) {
+      var sName = childSprints[s].name || 'Sprint ' + childSprints[s].id;
+      sprintBadges += '<span class="backlog-indicator">' + escHtml(sName) + '</span>';
+      inBacklog = true;
+    }
+
+    if (!inBacklog) {
+      var existingRow = document.querySelector('tr[data-key="' + child.key + '"]:not(.epic-child-row)');
+      if (existingRow) {
+        var parentTbody = existingRow.closest('tbody.droppable');
+        if (parentTbody) {
+          var sectionId = parentTbody.dataset.sprintId;
+          var sectionName = sprintName(parseInt(sectionId));
+          sprintBadges = '<span class="backlog-indicator">' + escHtml(sectionName) + '</span>';
+          inBacklog = true;
+        }
+      }
+    }
+
+    var sourceSprintId = (childSprints.length > 0 && childSprints[0].id) ? String(childSprints[0].id) : '0';
+    tr.dataset.sourceSprint = sourceSprintId;
+
+    tr.innerHTML =
+      '<td style="width:28px;"></td>' +
+      '<td><a href="' + jiraLink(child.key) + '" target="_blank">' + escHtml(child.key) + '</a>' + sprintBadges + '</td>' +
+      '<td>' + escHtml(child.summary) + '</td>' +
+      '<td class="epic-cell"></td>' +
+      '<td>' + typeBadge(child.type) + '</td>' +
+      '<td>' + escHtml(child.reporter_display || '') + '</td>' +
+      '<td class="num">' + (sp != null ? sp : '\u2014') + '</td>' +
+      '<td class="' + (PRI_CLASS[child.priority] || '') + '">' + priIconHtml(child) + escHtml(child.priority) + '</td>' +
+      '<td>' + statusBadge(child.status) + '</td>' +
+      '<td class="age-' + createdCls + '"><span class="age-dot age-dot-' + createdCls + '"></span>' + relativeTime(createdDays) + '</td>' +
+      '<td class="age-' + ageCls + '"><span class="age-dot age-dot-' + ageCls + '"></span>' + relativeTime(updatedDays) + '</td>' +
+      '<td></td>';
+
+    if (!inBacklog) tr.classList.add('not-in-backlog');
+    tr.draggable = true;
+    tr.addEventListener('dragstart', function (e) {
+      dragRow = tr;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', child.key);
+      setTimeout(function () { tr.classList.add('dragging'); }, 0);
+    });
+    tr.addEventListener('dragend', function () {
+      tr.classList.remove('dragging');
+      dragRow = null;
+    });
+    tr.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      showMoveMenuForEpicChild(tr, e.clientX, e.clientY);
+    });
+
+    // Wire detail panel click for epic children
+    tr.addEventListener('click', function (e) {
+      if (e.target.closest('a') || e.target.closest('input') || e.target.closest('button') ||
+          e.target.closest('select') || e.target.closest('.pri-picker')) return;
+      if (isDragging) return;
+      openDetailPanel(child.key);
+    });
+
+    return tr;
+  }
+
+  function moveEpicChildToBacklog(epicChildRow, targetSprintId) {
+    var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + targetSprintId + '"]');
+    if (!targetTbody) return;
+
+    var childKey = epicChildRow.dataset.key;
+    var epicParentKey = epicChildRow.dataset.epicParent || '';
+    var epicParentRow = epicParentKey ? document.querySelector('tr[data-key="' + epicParentKey + '"]') : null;
+
+    var issue = {
+      key: childKey,
+      summary: epicChildRow.querySelectorAll('td')[2].textContent.trim(),
+      sp: epicChildRow.dataset.sp !== '' ? parseFloat(epicChildRow.dataset.sp) : null,
+      assignee_display: epicChildRow.dataset.assignee || '',
+      assignee_name: epicChildRow.dataset.assigneeKey || '',
+      type: epicChildRow.dataset.issueType || '',
+      status: epicChildRow.querySelectorAll('td')[8] ? epicChildRow.querySelectorAll('td')[8].textContent.trim() : '',
+      priority: epicChildRow.dataset.priority || '',
+      priority_id: epicChildRow.dataset.priorityId || '',
+      priority_icon_local: '',
+      sprint_id: parseInt(targetSprintId),
+      epic_key: epicParentKey,
+      epic_name: epicParentRow ? epicParentRow.querySelectorAll('td')[2].textContent.trim() : '',
+      updated: epicChildRow.dataset.updated || '',
+      created: epicChildRow.dataset.created || ''
+    };
+
+    var newRow = buildIssueRow(issue, targetSprintId);
+    newRow.dataset.sourceSprint = '0';
+    targetTbody.appendChild(newRow);
+    makeIssueRowEditable(newRow);
+    wireDragEvents(newRow);
+
+    var truncSummary = issue.summary && issue.summary.length > 48 ? issue.summary.slice(0, 47) + '\u2026' : (issue.summary || '');
+    var src = sprintName(0);
+    var dest = sprintName(parseInt(targetSprintId));
+    var label = childKey + ' \u00B7 ' + truncSummary + ' \u00B7 ' + src + ' \u2192 ' + dest;
+    pendingMoves[childKey] = {
+      issueKey: childKey,
+      targetSprintId: parseInt(targetSprintId),
+      originalSprintId: 0,
+      label: label,
+      issueData: issue
+    };
+    savePendingToStorage();
+    renderPendingPanel();
+
+    var sectionName = sprintName(parseInt(targetSprintId));
+    epicChildRow.classList.remove('not-in-backlog');
+    epicChildRow.draggable = false;
+    var firstTd = epicChildRow.querySelector('td:nth-child(2)');
+    if (firstTd) {
+      var indicator = document.createElement('span');
+      indicator.className = 'backlog-indicator';
+      indicator.textContent = sectionName;
+      firstTd.appendChild(indicator);
+    }
+
+    computeStats();
+    updateSectionNotes();
+  }
+
+  // ── Editable fields ──
+  function cleanPendingEdit(key) {
+    var edit = pendingEdits[key];
+    if (!edit) return;
+    var row = document.querySelector('tr[data-key="' + key + '"]');
+    if (!row) return;
+    if ('sp' in edit) {
+      var origSPval = row.dataset.origSp === '' ? null : parseFloat(row.dataset.origSp);
+      if (edit.sp === origSPval) delete edit.sp;
+    }
+    if ('priority' in edit) {
+      if (edit.priority === (row.dataset.origPriority || '')) { delete edit.priority; delete edit.priority_id; }
+    }
+    if (!Object.keys(edit).length) delete pendingEdits[key];
+    savePendingToStorage();
+  }
+
+  function makeIssueRowEditable(row) {
+    var tds = row.querySelectorAll('td');
+
+    row.dataset.origSp = row.dataset.sp;
+    row.dataset.origPriority = row.dataset.priority || '';
+
+    // Priority (col index 7)
+    if (JIRA_PRIORITIES.length) {
+      var priCell = tds[7];
+      var priVal = row.dataset.priority || '';
+      var allowedPri = ['Showstopper', 'Critical', 'Major', 'Minor', 'None'];
+      var picker = document.createElement('span');
+      picker.className = 'pri-picker';
+      picker.draggable = false;
+      var curP = null;
+      for (var pi = 0; pi < JIRA_PRIORITIES.length; pi++) {
+        if (JIRA_PRIORITIES[pi].name === priVal) { curP = JIRA_PRIORITIES[pi]; break; }
+      }
+      var labelHtml = (curP && curP.localIcon ? '<img src="' + curP.localIcon + '" class="pri-icon">' : '') +
+        '<span class="pri-label">' + (priVal || 'None') + '</span><span class="pri-caret">\u25BE</span>';
+      picker.innerHTML = labelHtml;
+      var priMenu = document.createElement('div');
+      priMenu.className = 'pri-menu';
+      allowedPri.forEach(function (name) {
+        var p = null;
+        for (var j = 0; j < JIRA_PRIORITIES.length; j++) {
+          if (JIRA_PRIORITIES[j].name === name) { p = JIRA_PRIORITIES[j]; break; }
+        }
+        var item = document.createElement('div');
+        item.className = 'pri-menu-item' + (name === priVal ? ' selected' : '');
+        item.dataset.name = name;
+        item.dataset.id = p ? p.id : '';
+        item.dataset.icon = p && p.localIcon ? p.localIcon : '';
+        item.innerHTML = (p && p.localIcon ? '<img src="' + p.localIcon + '">' : '') +
+          '<span>' + name + '</span>';
+        item.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var val = this.dataset.name;
+          var old = row.dataset.priority;
+          row.dataset.priority = val;
+          row.dataset.priorityId = this.dataset.id || '';
+          var pInfo = null;
+          for (var k = 0; k < JIRA_PRIORITIES.length; k++) {
+            if (JIRA_PRIORITIES[k].name === val) { pInfo = JIRA_PRIORITIES[k]; break; }
+          }
+          var iconEl = picker.querySelector('.pri-icon');
+          if (pInfo && pInfo.localIcon) {
+            if (iconEl) { iconEl.src = pInfo.localIcon; }
+            else { var img = document.createElement('img'); img.src = pInfo.localIcon; img.className = 'pri-icon'; picker.insertBefore(img, picker.firstChild); }
+          } else if (iconEl) { iconEl.remove(); }
+          var lbl = picker.querySelector('.pri-label');
+          if (lbl) lbl.textContent = val || 'None';
+          priCell.className = PRI_CLASS[val] || '';
+          priMenu.querySelectorAll('.pri-menu-item').forEach(function (mi) {
+            mi.classList.toggle('selected', mi.dataset.name === val);
+          });
+          priMenu.classList.remove('open');
+          if (val !== old) {
+            var key = row.dataset.key;
+            if (!pendingEdits[key]) pendingEdits[key] = {};
+            pendingEdits[key].priority = val;
+            pendingEdits[key].priority_id = this.dataset.id || '';
+            cleanPendingEdit(key);
+            renderPendingPanel();
+          }
+        });
+        priMenu.appendChild(item);
+      });
+      picker.appendChild(priMenu);
+      picker.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      picker.addEventListener('click', function (e) {
+        var isOpen = priMenu.classList.contains('open');
+        document.querySelectorAll('.pri-menu.open').forEach(function (m) { m.classList.remove('open'); });
+        if (!isOpen) {
+          priMenu.classList.add('open');
+          var rect = picker.getBoundingClientRect();
+          var menuH = priMenu.offsetHeight;
+          var spaceBelow = window.innerHeight - rect.bottom;
+          if (spaceBelow < menuH && rect.top > menuH) {
+            priMenu.style.top = (rect.top - menuH) + 'px';
+          } else {
+            priMenu.style.top = rect.bottom + 'px';
+          }
+          priMenu.style.left = rect.left + 'px';
+        }
+      });
+      document.addEventListener('click', function (e) {
+        if (!picker.contains(e.target)) priMenu.classList.remove('open');
+      });
+      priCell.textContent = '';
+      priCell.className = PRI_CLASS[priVal] || '';
+      priCell.appendChild(picker);
+    }
+
+    // SP (col index 6)
+    var spCell = tds[6];
+    var spVal = parseFloat(row.dataset.sp) || 0;
+    var spInput = document.createElement('input');
+    spInput.type = 'number';
+    spInput.className = 'sp-edit';
+    spInput.min = '0';
+    spInput.step = '0.5';
+    spInput.value = row.dataset.sp !== '' ? spVal : '';
+    spInput.placeholder = '\u2014';
+    spInput.draggable = false;
+    spInput.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    spInput.addEventListener('input', function () {
+      var v = parseFloat(this.value);
+      var newSP = (isNaN(v) || v < 0) ? null : v;
+      var old = parseFloat(row.dataset.sp);
+      old = isNaN(old) ? null : old;
+      row.dataset.sp = newSP !== null ? newSP : '';
+      if (newSP !== old) {
+        var key = row.dataset.key;
+        if (!pendingEdits[key]) pendingEdits[key] = {};
+        pendingEdits[key].sp = newSP;
+        cleanPendingEdit(key);
+        computeStats();
+        updateSectionNotes();
+        renderPendingPanel();
+      }
+    });
+    spCell.textContent = '';
+    spCell.style.color = '';
+    spCell.appendChild(spInput);
+  }
+
+  // ── Pending panel ──
+  document.getElementById('pending-header').addEventListener('click', function () {
+    var body = document.getElementById('pending-body');
+    var chev = document.getElementById('pending-chevron');
+    var open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    chev.textContent = open ? '\u25B6' : '\u25BC';
+  });
+
+  function renderPendingPanel() {
+    var panel = document.getElementById('pending-panel');
+    var list = document.getElementById('pending-list');
+    list.innerHTML = '';
+    var allKeys = {};
+    Object.values(pendingMoves).forEach(function (m) { allKeys[m.issueKey] = true; });
+    Object.keys(pendingEdits).forEach(function (k) { allKeys[k] = true; });
+    Object.keys(pendingTransitions).forEach(function (k) { allKeys[k] = true; });
+
+    Object.keys(allKeys).forEach(function (key) {
+      var parts = [];
+      var move = pendingMoves[key];
+      var edit = pendingEdits[key];
+      var trans = pendingTransitions[key];
+      var header = key;
+
+      if (move) {
+        var segs = move.label.split(' \u00B7 ');
+        if (segs.length >= 2) header = segs[0] + ' \u00B7 ' + segs[1];
+        if (segs.length >= 3) parts.push(segs.slice(2).join(' \u00B7 '));
+      } else {
+        var row = document.querySelector('tr[data-key="' + key + '"]');
+        if (row) {
+          var sum = row.querySelectorAll('td')[2];
+          if (sum) {
+            var txt = sum.textContent.trim();
+            if (txt.length > 48) txt = txt.slice(0, 47) + '\u2026';
+            header = key + ' \u00B7 ' + txt;
+          }
+        }
+      }
+      if (edit) {
+        var editParts = [];
+        if ('sp' in edit) editParts.push('SP \u2192 ' + (edit.sp != null ? edit.sp : '\u2014'));
+        if ('priority' in edit) editParts.push('Priority \u2192 ' + edit.priority);
+        if (editParts.length) parts.push(editParts.join(', '));
+      }
+      if (trans) {
+        var transLabel = trans.transition_name + (trans.resolution ? ' (' + trans.resolution + ')' : '');
+        parts.push('Transition \u2192 ' + transLabel);
+      }
+
+      var li = document.createElement('li');
+      li.dataset.key = key;
+      li.textContent = header + (parts.length ? ' \u00B7 ' + parts.join(' \u00B7 ') : '');
+      list.appendChild(li);
+    });
+
+    var count = list.children.length;
+    document.getElementById('pending-count').textContent = count;
+    panel.style.display = count > 0 ? 'block' : 'none';
+    document.getElementById('apply-btn').disabled = false;
+  }
+
+  // ── Discard all ──
+  window.discardAll = function () {
+    showConfirm('Discard all pending changes?', 'This cannot be undone.', 'Discard', doDiscardAll);
+  };
+
+  function doDiscardAll() {
+    collapseAllEpics();
+    // Revert moves
+    Object.values(pendingMoves).forEach(function (m) {
+      var row = document.querySelector('tr[data-key="' + m.issueKey + '"]:not(.epic-child-row)');
+      if (!row) return;
+      var origTbody = document.querySelector('tbody.droppable[data-sprint-id="' + m.originalSprintId + '"]');
+      if (origTbody && row.parentElement !== origTbody) {
+        origTbody.appendChild(row);
+      } else if (!origTbody) {
+        row.remove();
+      }
+    });
+    // Revert edits
+    Object.keys(pendingEdits).forEach(function (k) {
+      var row = document.querySelector('tr[data-key="' + k + '"]');
+      if (!row) return;
+      var edit = pendingEdits[k];
+      if ('sp' in edit) {
+        row.dataset.sp = row.dataset.origSp || '';
+        var spInput = row.querySelector('.sp-edit');
+        if (spInput) spInput.value = row.dataset.origSp || '';
+      }
+      if ('priority' in edit) {
+        var origPri = row.dataset.origPriority || '';
+        row.dataset.priority = origPri;
+        row.dataset.priorityId = '';
+        var picker = row.querySelector('.pri-picker');
+        if (picker) {
+          var pInfo = null;
+          for (var i = 0; i < JIRA_PRIORITIES.length; i++) {
+            if (JIRA_PRIORITIES[i].name === origPri) { pInfo = JIRA_PRIORITIES[i]; break; }
+          }
+          var lbl = picker.querySelector('.pri-label');
+          if (lbl) lbl.textContent = origPri || 'None';
+          var icon = picker.querySelector('.pri-icon');
+          if (icon && pInfo && pInfo.localIcon) icon.src = pInfo.localIcon;
+        }
+        var priTd = row.querySelectorAll('td')[7];
+        if (priTd) priTd.className = PRI_CLASS[origPri] || '';
+      }
+    });
+    // Revert transitions
+    Object.keys(pendingTransitions).forEach(function (k) {
+      var row = document.querySelector('tr[data-key="' + k + '"]:not(.epic-child-row)');
+      if (row) {
+        row.style.opacity = '';
+        row.style.textDecoration = '';
+      }
+    });
+
+    pendingMoves = {};
+    pendingEdits = {};
+    pendingTransitions = {};
+    clearPendingStorage();
+    applyTypeFilter();
+    renderPendingPanel();
+    computeStats();
+    updateSectionNotes();
+    showToast('All pending changes discarded', 'info');
+  }
+
+  // ── Apply to Jira ──
+  window.applyToJira = function () {
+    var btn = document.getElementById('apply-btn');
+    btn.disabled = true;
+    btn.textContent = 'Applying\u2026';
+
+    var ops = [];
+    Object.values(pendingMoves).forEach(function (m) {
+      ops.push({ type: 'move', key: m.issueKey, move: m });
+    });
+    Object.keys(pendingEdits).forEach(function (k) {
+      ops.push({ type: 'edit', key: k, edit: pendingEdits[k] });
+    });
+    Object.keys(pendingTransitions).forEach(function (k) {
+      ops.push({ type: 'transition', key: k, transition: pendingTransitions[k] });
+    });
+
+    if (ops.length === 0) { btn.disabled = false; btn.textContent = 'Apply to Jira'; return; }
+
+    var statusText = document.getElementById('apply-status-text');
+    var progressDiv = document.getElementById('apply-progress');
+    var progressText = document.getElementById('apply-progress-text');
+    var progressPct = document.getElementById('apply-progress-pct');
+    var progressFill = document.getElementById('apply-progress-fill');
+    statusText.style.display = 'none';
+    progressDiv.style.display = 'block';
+    progressFill.style.width = '0%';
+    progressFill.style.background = '#006644';
+
+    var total = ops.length;
+    var doneCount = 0;
+    var hasFailure = false;
+    var keyOps = {};
+    ops.forEach(function (op) {
+      if (!keyOps[op.key]) keyOps[op.key] = { total: 0, done: 0, failed: false };
+      keyOps[op.key].total++;
+    });
+
+    function markListItem(key, success) {
+      var ko = keyOps[key];
+      if (!ko) return;
+      ko.done++;
+      if (!success) ko.failed = true;
+      if (ko.done < ko.total) return;
+      var li = document.querySelector('#pending-list li[data-key="' + key + '"]');
+      if (!li) return;
+      var icon = ko.failed ? '\u2717 ' : '\u2713 ';
+      li.textContent = icon + li.textContent;
+      li.style.color = ko.failed ? '#bf2600' : '#006644';
+      if (!ko.failed) li.style.opacity = '0.5';
+    }
+
+    function updateProgress() {
+      var pct = Math.round((doneCount / total) * 100);
+      progressText.textContent = doneCount < total ? 'Applying ' + doneCount + ' of ' + total + '...' : '';
+      progressPct.textContent = pct + '%';
+      progressFill.style.width = pct + '%';
+      if (hasFailure) progressFill.style.background = '#ff8b00';
+    }
+    updateProgress();
+
+    var failed = [];
+
+    function onDone(opKey, opType, success) {
+      if (!success) hasFailure = true;
+      if (success) delete detailCache[opKey];
+      doneCount++;
+      markListItem(opKey, success);
+      updateProgress();
+
+      // Immediately remove successfully transitioned rows and update counters
+      if (success && opType === 'transition') {
+        document.querySelectorAll('tr[data-key="' + opKey + '"]').forEach(function (row) { row.remove(); });
+        computeStats();
+        updateSectionNotes();
+        if (activeDetailKey === opKey) closeDetailPanel();
+      }
+
+      if (doneCount === total) {
+        btn.disabled = false;
+        btn.textContent = 'Apply to Jira';
+        if (failed.length === 0) clearPendingStorage();
+        else savePendingToStorage();
+        if (failed.length === 0) {
+          progressText.textContent = '\u2713 All ' + total + ' changes synced';
+          progressPct.textContent = '';
+          progressFill.style.background = '#006644';
+          setTimeout(function () {
+            progressDiv.style.display = 'none';
+            statusText.style.display = '';
+            pendingMoves = {};
+            pendingEdits = {};
+            pendingTransitions = {};
+            renderPendingPanel();
+            computeStats();
+            updateSectionNotes();
+          }, 3000);
+        } else {
+          progressText.textContent = '\u26A0 ' + failed.length + ' of ' + total + ' failed';
+          progressPct.textContent = '';
+          renderPendingPanel();
+          computeStats();
+          showToast(failed.length + ' change(s) failed \u2014 is backlog-server.py running?', 'warn');
+        }
+      }
+    }
+
+    // Process moves first, then edits, then transitions (sequentially by type)
+    var moveOps = ops.filter(function (o) { return o.type === 'move'; });
+    var editOps = ops.filter(function (o) { return o.type === 'edit'; });
+    var transOps = ops.filter(function (o) { return o.type === 'transition'; });
+
+    function processOps(opList, idx) {
+      if (idx >= opList.length) return Promise.resolve();
+      var op = opList[idx];
+      var promise;
+      if (op.type === 'move') {
+        promise = fetch(API_BASE + '/api/move', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ issue_key: op.move.issueKey, sprint_id: op.move.targetSprintId })
+        })
+          .then(function (r) { if (!r.ok) throw new Error(); delete pendingMoves[op.key]; onDone(op.key, 'move', true); })
+          .catch(function () { failed.push(op.key); onDone(op.key, 'move', false); });
+      } else if (op.type === 'edit') {
+        var payload = { issue_key: op.key };
+        if ('sp' in op.edit) payload.sp = op.edit.sp;
+        if ('priority' in op.edit) { payload.priority = op.edit.priority; payload.priority_id = op.edit.priority_id; }
+        promise = fetch(API_BASE + '/api/edit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+          .then(function (r) { if (!r.ok) throw new Error(); delete pendingEdits[op.key]; onDone(op.key, 'edit', true); })
+          .catch(function () { failed.push(op.key); onDone(op.key, 'edit', false); });
+      } else if (op.type === 'transition') {
+        var tPayload = {
+          issue_key: op.key,
+          transition_id: op.transition.transition_id,
+          transition_name: op.transition.transition_name || '',
+          resolution: op.transition.resolution || ''
+        };
+        promise = fetch(API_BASE + '/api/transition', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tPayload)
+        })
+          .then(function (r) { if (!r.ok) throw new Error(); delete pendingTransitions[op.key]; onDone(op.key, 'transition', true); })
+          .catch(function () { failed.push(op.key); onDone(op.key, 'transition', false); });
+      }
+      return promise.then(function () { return processOps(opList, idx + 1); });
+    }
+
+    processOps(moveOps, 0)
+      .then(function () { return processOps(editOps, 0); })
+      .then(function () { return processOps(transOps, 0); });
+  };
+
+  // ── Backlog section management ──
+  function createBacklogSection(sprintId, name) {
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'backlog-card-' + sprintId;
+    card.dataset.backlogId = sprintId;
+    card.innerHTML =
+      '<div class="card-header" draggable="true">' +
+      '<button class="collapse-toggle" title="Collapse/expand">\u25BC</button>' +
+      '<h2>' + escHtml(name) + '</h2>' +
+      '<span class="filter-icon" data-filter-key="' + sprintId + '" title="Filter issue types"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2h14l-5 6v5l-4 2V8z"/></svg></span>' +
+      '<span class="source-note" id="backlog-note-' + sprintId + '">Loading...</span>' +
+      '</div>' +
+      '<table><thead><tr>' +
+      '<th style="width:34px;"></th>' +
+      '<th class="sortable" data-sort="key" style="width:100px;">Key</th>' +
+      '<th>Summary</th>' +
+      '<th class="sortable" data-sort="epic" style="width:140px;">Epic</th>' +
+      '<th class="sortable" data-sort="type" style="width:70px;">Type</th>' +
+      '<th class="sortable" data-sort="reporter" style="width:110px;">Reporter</th>' +
+      '<th class="num sortable" data-sort="sp" style="width:40px;">SP</th>' +
+      '<th class="sortable" data-sort="priority" style="width:90px;">Priority</th>' +
+      '<th class="sortable" data-sort="status" style="width:80px;">Status</th>' +
+      '<th class="sortable" data-sort="created" style="width:65px;">Created</th>' +
+      '<th class="sortable" data-sort="updated" style="width:65px;">Updated</th>' +
+      '<th style="width:32px;"></th>' +
+      '</tr></thead>' +
+      '<tbody class="droppable" data-sprint-id="' + sprintId + '">' +
+      '<tr class="loading-row"><td colspan="12">Fetching tasks from Jira...</td></tr>' +
+      '</tbody></table>';
+
+    card.querySelectorAll('th.sortable').forEach(wireSortableHeader);
+    document.getElementById('backlog-container').appendChild(card);
+    var tbody = card.querySelector('tbody.droppable');
+    wireDropEvents(tbody);
+    wireBacklogDrag(card);
+    wireFilterIcon(card.querySelector('.filter-icon'));
+
+    // Collapse toggle
+    var collapseBtn = card.querySelector('.collapse-toggle');
+    collapseBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      card.classList.toggle('collapsed');
+      saveCollapseState();
+    });
+    // Restore collapsed state
+    if (collapsedBacklogs[sprintId]) {
+      card.classList.add('collapsed');
+    }
+
+    return card;
+  }
+
+  // ── Backlog card drag-to-reorder ──
+  var draggedBacklog = null;
+
+  function wireBacklogDrag(card) {
+    var header = card.querySelector('.card-header');
+    header.addEventListener('dragstart', function (e) {
+      draggedBacklog = card;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'backlog');
+      card.style.opacity = '0.4';
+    });
+    header.addEventListener('dragend', function () {
+      card.style.opacity = '';
+      draggedBacklog = null;
+      document.querySelectorAll('.drag-over-card').forEach(function (c) { c.classList.remove('drag-over-card'); });
+    });
+    card.addEventListener('dragover', function (e) {
+      if (!draggedBacklog || draggedBacklog === card) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      card.classList.add('drag-over-card');
+    });
+    card.addEventListener('dragleave', function () {
+      card.classList.remove('drag-over-card');
+    });
+    card.addEventListener('drop', function (e) {
+      if (!draggedBacklog || draggedBacklog === card) return;
+      e.preventDefault();
+      card.classList.remove('drag-over-card');
+      var container = document.getElementById('backlog-container');
+      var rect = card.getBoundingClientRect();
+      var midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        container.insertBefore(draggedBacklog, card);
+      } else {
+        container.insertBefore(draggedBacklog, card.nextSibling);
+      }
+      saveBacklogPrefs();
+    });
+  }
+
+  function removeBacklogSection(sprintId) {
+    var card = document.getElementById('backlog-card-' + sprintId);
+    if (card) card.remove();
+    var sid = parseInt(sprintId);
+    Object.keys(pendingMoves).forEach(function (key) {
+      var m = pendingMoves[key];
+      if (m.targetSprintId === sid) delete pendingMoves[key];
+    });
+    document.querySelectorAll('tr[data-source-sprint="' + sprintId + '"]').forEach(function (row) {
+      row.remove();
+    });
+    renderPendingPanel();
+    computeStats();
+    updateSectionNotes();
+  }
+
+  function saveBacklogPrefs() {
+    var prefs = { selected: [] };
+    Object.keys(selectedBacklogs).forEach(function (id) {
+      if (selectedBacklogs[id]) prefs.selected.push(id);
+    });
+    var cards = document.querySelectorAll('#backlog-container .card[data-backlog-id]');
+    prefs.order = [];
+    cards.forEach(function (c) { prefs.order.push(c.dataset.backlogId); });
+    prefs.filters = sectionFilters;
+    prefs.showClosed = sectionShowClosed;
+    prefs.collapsed = collapsedBacklogs;
+    fetch(API_BASE + '/api/backlog-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prefs)
+    }).catch(function () {});
+  }
+
+  function saveCollapseState() {
+    collapsedBacklogs = {};
+    document.querySelectorAll('#backlog-container .card.collapsed[data-backlog-id]').forEach(function (card) {
+      collapsedBacklogs[card.dataset.backlogId] = true;
+    });
+    saveBacklogPrefs();
+  }
+
+  function initBacklogs(backlogSprints) {
+    allBacklogs = backlogSprints;
+    return fetch(API_BASE + '/api/backlog-prefs')
+      .then(function (r) { return r.json(); })
+      .then(function (prefs) {
+        sectionFilters = prefs.filters || {};
+        sectionShowClosed = prefs.showClosed || {};
+        collapsedBacklogs = prefs.collapsed || {};
+        var saved = prefs.selected || [];
+        if (saved.length === 0 && Object.keys(allBacklogs).length > 0) {
+          saved = Object.keys(allBacklogs);
+        }
+        selectedBacklogs = {};
+        saved.forEach(function (id) {
+          if (allBacklogs[id]) selectedBacklogs[id] = true;
+        });
+        var order = prefs.order || [];
+        var ordered = [];
+        order.forEach(function (id) { if (selectedBacklogs[id]) ordered.push(id); });
+        Object.keys(selectedBacklogs).forEach(function (id) {
+          if (selectedBacklogs[id] && ordered.indexOf(id) === -1) ordered.push(id);
+        });
+        ordered.forEach(function (id) {
+          createBacklogSection(id, allBacklogs[id]);
+        });
+      })
+      .catch(function () {
+        selectedBacklogs = {};
+        Object.keys(allBacklogs).forEach(function (id) {
+          selectedBacklogs[id] = true;
+          createBacklogSection(id, allBacklogs[id]);
+        });
+      });
+  }
+
+  // ── Restore pending state from localStorage ──
+  function restorePendingState() {
+    loadPendingFromStorage();
+    // Re-apply moves
+    Object.keys(pendingMoves).forEach(function (key) {
+      var m = pendingMoves[key];
+      var row = document.querySelector('tr[data-key="' + m.issueKey + '"]');
+      var targetTbody = document.querySelector('tbody.droppable[data-sprint-id="' + m.targetSprintId + '"]');
+      if (!targetTbody) { delete pendingMoves[key]; return; }
+      if (!row && m.issueData) {
+        row = buildIssueRow(m.issueData, m.targetSprintId);
+        targetTbody.appendChild(row);
+        makeIssueRowEditable(row);
+        wireDragEvents(row);
+      } else if (!row) {
+        delete pendingMoves[key]; return;
+      } else if (row.parentElement !== targetTbody) {
+        targetTbody.appendChild(row);
+      }
+    });
+    // Re-apply edits
+    Object.keys(pendingEdits).forEach(function (k) {
+      var row = document.querySelector('tr[data-key="' + k + '"]');
+      if (!row) { delete pendingEdits[k]; return; }
+      var edit = pendingEdits[k];
+      if ('sp' in edit) {
+        row.dataset.sp = edit.sp != null ? edit.sp : '';
+        var spInput = row.querySelector('.sp-edit');
+        if (spInput) spInput.value = edit.sp != null ? edit.sp : '';
+      }
+      if ('priority' in edit) {
+        row.dataset.priority = edit.priority || '';
+        row.dataset.priorityId = edit.priority_id || '';
+        var picker = row.querySelector('.pri-picker');
+        if (picker) {
+          var pInfo = null;
+          for (var i = 0; i < JIRA_PRIORITIES.length; i++) {
+            if (JIRA_PRIORITIES[i].name === edit.priority) { pInfo = JIRA_PRIORITIES[i]; break; }
+          }
+          var lbl = picker.querySelector('.pri-label');
+          if (lbl) lbl.textContent = edit.priority || 'None';
+          var icon = picker.querySelector('.pri-icon');
+          if (icon && pInfo && pInfo.localIcon) icon.src = pInfo.localIcon;
+        }
+        var priTd = row.querySelectorAll('td')[7];
+        if (priTd) priTd.className = PRI_CLASS[edit.priority] || '';
+      }
+    });
+    // Re-apply transitions visual state
+    Object.keys(pendingTransitions).forEach(function (k) {
+      var row = document.querySelector('tr[data-key="' + k + '"]:not(.epic-child-row)');
+      if (row) {
+        row.style.opacity = '0.5';
+        row.style.textDecoration = 'line-through';
+      }
+    });
+    savePendingToStorage();
+    applyTypeFilter();
+    renderPendingPanel();
+  }
+
+  // ── Refresh tasks from Jira ──
+  window.refreshTasks = function (initial) {
+    collapseAllEpics();
+    detailCache = {};
+    if (!initial) showToast('Fetching tasks from Jira\u2026', 'info');
+
+    var sprintIds = [];
+    document.querySelectorAll('tbody.droppable[data-sprint-id]').forEach(function (tb) {
+      if (tb.dataset.sprintId) sprintIds.push(tb.dataset.sprintId);
+    });
+    if (sprintIds.length === 0) return;
+
+    fetch(API_BASE + '/api/sprint-issues?sprints=' + sprintIds.join(','))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (result) {
+        if (Array.isArray(result.priorities) && result.priorities.length) JIRA_PRIORITIES = result.priorities;
+        var data = result.sprints || result;
+        document.querySelectorAll('.loading-row').forEach(function (r) { r.remove(); });
+        var updatedSP = 0, updatedAsgn = 0, added = 0;
+
+        Object.keys(data).forEach(function (sprintId) {
+          var tbody = document.querySelector('tbody.droppable[data-sprint-id="' + sprintId + '"]');
+          if (!tbody) return;
+
+          data[sprintId].forEach(function (issue) {
+            if (pendingMoves[issue.key] || pendingEdits[issue.key] || pendingTransitions[issue.key]) return;
+
+            // Filter out issues that don't belong to the configured team
+            var cfgTeam = (teamConfig.team_name || '').toLowerCase();
+            if (cfgTeam && Array.isArray(issue.team) && issue.team.length > 0) {
+              var inTeam = issue.team.some(function (t) { return t.toLowerCase() === cfgTeam; });
+              if (!inTeam) return;
+            }
+
+            var row = document.querySelector('tr[data-key="' + issue.key + '"]');
+            if (row) {
+              // Update SP
+              var newSP = issue.sp != null ? parseFloat(issue.sp) : null;
+              var oldSP = row.dataset.sp !== '' ? parseFloat(row.dataset.sp) : null;
+              if (newSP !== oldSP) {
+                row.dataset.sp = issue.sp != null ? newSP : '';
+                row.dataset.origSp = issue.sp != null ? String(newSP) : '';
+                var spInput = row.querySelector('.sp-edit');
+                if (spInput) spInput.value = issue.sp != null ? newSP : '';
+                flashCell(row.querySelectorAll('td')[6]);
+                updatedSP++;
+              }
+              // Update Assignee
+              var newReporter = issue.reporter_display || '';
+              var oldReporter = row.dataset.reporter || '';
+              if (newReporter !== oldReporter) {
+                row.dataset.reporter = newReporter;
+                row.querySelectorAll('td')[5].textContent = newReporter;
+                flashCell(row.querySelectorAll('td')[5]);
+              }
+              // Update Priority
+              var newPri = issue.priority || '';
+              var oldPri = row.dataset.priority || '';
+              if (newPri !== oldPri) {
+                row.dataset.priority = newPri;
+                row.dataset.origPriority = newPri;
+                row.dataset.priorityId = issue.priority_id || '';
+                var priPicker = row.querySelector('.pri-picker');
+                if (priPicker) {
+                  var pInfo = null;
+                  for (var k = 0; k < JIRA_PRIORITIES.length; k++) {
+                    if (JIRA_PRIORITIES[k].name === newPri) { pInfo = JIRA_PRIORITIES[k]; break; }
+                  }
+                  if (priPicker.querySelector('.pri-icon') && pInfo && pInfo.localIcon) priPicker.querySelector('.pri-icon').src = pInfo.localIcon;
+                  var lbl = priPicker.querySelector('.pri-label');
+                  if (lbl) lbl.textContent = newPri || 'None';
+                  priPicker.querySelectorAll('.pri-menu-item').forEach(function (mi) {
+                    mi.classList.toggle('selected', mi.dataset.name === newPri);
+                  });
+                }
+                var priTd = row.querySelectorAll('td')[7];
+                if (priTd) { priTd.className = PRI_CLASS[newPri] || ''; flashCell(priTd); }
+              }
+              // Update staleness
+              var updatedDays = daysSince(issue.updated);
+              row.dataset.updated = issue.updated || '';
+              row.dataset.ageDays = updatedDays;
+              var ageTd = row.querySelectorAll('td')[10];
+              if (ageTd) {
+                var cls = ageClass(updatedDays);
+                ageTd.className = 'age-' + cls;
+                ageTd.innerHTML = '<span class="age-dot age-dot-' + cls + '"></span>' + relativeTime(updatedDays);
+              }
+              if (updatedDays >= 90) {
+                row.classList.add('stale-row');
+              } else {
+                row.classList.remove('stale-row');
+              }
+            } else {
+              var newRow = buildIssueRow(issue, sprintId);
+              tbody.appendChild(newRow);
+              makeIssueRowEditable(newRow);
+              wireDragEvents(newRow);
+              flashCell(newRow.querySelectorAll('td')[1]);
+              added++;
+            }
+          });
+        });
+
+        applyTypeFilter();
+        if (initial && !restorePendingState._done) {
+          restorePendingState._done = true;
+          restorePendingState();
+        }
+        computeStats();
+        updateSectionNotes();
+
+        var parts = [];
+        if (updatedSP) parts.push(updatedSP + ' SP updated');
+        if (updatedAsgn) parts.push(updatedAsgn + ' assignees updated');
+        if (added) parts.push(added + ' new tasks');
+        if (!initial) showToast(parts.length ? parts.join(', ') : 'No changes', 'success');
+        else if (parts.length) showToast(parts.join(', '), 'success');
+      })
+      .catch(function () {
+        showToast('Could not reach backlog-server.py \u2014 is it running?', 'warn');
+      });
+  };
+
+  // ── Settings modal ──
+  window.openSettings = function () {
+    var overlay = document.getElementById('settings-overlay');
+    overlay.style.display = 'flex';
+    var cfg = teamConfig;
+    selectedBoardId = cfg.board_id || null;
+    selectedBoardName = cfg.board_name || '';
+    settingsBacklogPreview = null;
+    updateBoardSelectedDisplay();
+    var projectKey = cfg.project_key || '';
+    document.getElementById('settings-project-key').value = projectKey;
+    document.getElementById('settings-board-list').innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Select a team above to see boards</span>';
+    if (projectKey) loadTeamDropdown(projectKey);
+    // If backlogs already loaded, render them; otherwise fetch for the configured board
+    if (Object.keys(allBacklogs).length > 0) {
+      renderSettingsBacklogList();
+    } else if (selectedBoardId) {
+      var bl = document.getElementById('settings-backlog-list');
+      bl.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Loading sprints...</span>';
+      fetch(API_BASE + '/api/board-sprints?board_id=' + selectedBoardId, { signal: AbortSignal.timeout(10000) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var sprints = d.backlog_sprints || {};
+          // Populate allBacklogs so they persist
+          Object.keys(sprints).forEach(function (id) { allBacklogs[id] = sprints[id]; });
+          renderSettingsBacklogList();
+        })
+        .catch(function () { bl.innerHTML = '<span style="color:#bf2600;">Failed to load sprints</span>'; });
+    } else {
+      renderSettingsBacklogList();
+    }
+  };
+
+  window.closeSettings = function () {
+    document.getElementById('settings-overlay').style.display = 'none';
+  };
+
+  document.addEventListener('click', function (e) {
+    var overlay = document.getElementById('settings-overlay');
+    if (e.target === overlay) closeSettings();
+  });
+
+  function updateBoardSelectedDisplay() {
+    var el = document.getElementById('settings-board-selected');
+    if (selectedBoardId) {
+      document.getElementById('settings-board-selected-text').textContent =
+        '\u2713 ' + selectedBoardName + ' (ID: ' + selectedBoardId + ')';
+      el.style.display = 'flex';
+      document.getElementById('settings-board-list').style.display = 'none';
+    } else {
+      el.style.display = 'none';
+      document.getElementById('settings-board-list').style.display = '';
+    }
+  }
+
+  window.showBoardList = function () {
+    document.getElementById('settings-board-selected').style.display = 'none';
+    var list = document.getElementById('settings-board-list');
+    list.style.display = '';
+    searchBoards();
+  };
+
+  function searchBoards() {
+    var container = document.getElementById('settings-board-list');
+    var teamSel = document.getElementById('settings-team-select');
+    var teamFilter = teamSel ? teamSel.value : '';
+    var projectFilter = document.getElementById('settings-project-key').value.trim();
+    if (!teamFilter) {
+      container.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Select a team above to see boards</span>';
+      return;
+    }
+    container.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">Searching...</span>';
+    var params = 'name=' + encodeURIComponent(teamFilter);
+    if (projectFilter) params += '&project=' + encodeURIComponent(projectFilter);
+    fetch(API_BASE + '/api/boards?' + params, { signal: AbortSignal.timeout(10000) })
+      .then(function (r) { return r.json(); })
+      .then(function (boards) {
+        boardPickerList = boards;
+        renderBoardList(boards);
+      })
+      .catch(function () {
+        container.innerHTML = '<span style="color:#bf2600;padding:8px 12px;display:block;">Failed to load boards</span>';
+      });
+  }
+
+  function renderBoardList(boards) {
+    var container = document.getElementById('settings-board-list');
+    if (boards.length === 0) {
+      container.innerHTML = '<span style="color:#5e6c84;padding:8px 12px;display:block;">No matching boards</span>';
+      return;
+    }
+    container.innerHTML = '';
+    boards.forEach(function (b) {
+      var div = document.createElement('div');
+      div.dataset.boardId = b.id;
+      div.dataset.boardName = b.name;
+      var isSel = b.id === selectedBoardId;
+      div.style.cssText = 'padding:6px 12px;cursor:pointer;' + (isSel ? 'background:#deebff;font-weight:600;' : '');
+      div.innerHTML = escHtml(b.name) + ' <span style="color:#5e6c84;font-size:11px;">(ID: ' + b.id + ')</span>';
+      div.addEventListener('mouseenter', function () { if (b.id !== selectedBoardId) this.style.background = '#f4f5f7'; });
+      div.addEventListener('mouseleave', function () { this.style.background = b.id === selectedBoardId ? '#deebff' : ''; });
+      div.addEventListener('click', function () {
+        selectedBoardId = b.id;
+        selectedBoardName = b.name;
+        updateBoardSelectedDisplay();
+        var bl = document.getElementById('settings-backlog-list');
+        bl.innerHTML = '<span style="color:#5e6c84;">Loading backlogs...</span>';
+        fetch(API_BASE + '/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(10000) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            settingsBacklogPreview = d.backlog_sprints || {};
+            renderSettingsBacklogPreview();
+          })
+          .catch(function () {
+            bl.innerHTML = '<span style="color:#bf2600;">Failed to load backlogs</span>';
+          });
+      });
+      container.appendChild(div);
+    });
+    if (boards.length === 1) {
+      var b = boards[0];
+      selectedBoardId = b.id;
+      selectedBoardName = b.name;
+      updateBoardSelectedDisplay();
+      var bl = document.getElementById('settings-backlog-list');
+      bl.innerHTML = '<span style="color:#5e6c84;">Loading backlogs...</span>';
+      fetch(API_BASE + '/api/board-sprints?board_id=' + b.id, { signal: AbortSignal.timeout(10000) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { settingsBacklogPreview = d.backlog_sprints || {}; renderSettingsBacklogPreview(); })
+        .catch(function () { bl.innerHTML = '<span style="color:#bf2600;">Failed to load backlogs</span>'; });
+    }
+  }
+
+  function loadTeamDropdown(projectKey) {
+    var sel = document.getElementById('settings-team-select');
+    var status = document.getElementById('settings-team-select-status');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Loading...</option>';
+    sel.disabled = true;
+    if (status) status.textContent = '';
+    fetch(API_BASE + '/api/project-teams?project=' + encodeURIComponent(projectKey),
+      { signal: AbortSignal.timeout(10000) })
+      .then(function (r) { return r.json(); })
+      .then(function (teams) {
+        sel.innerHTML = '<option value="">-- select a team --</option>';
+        var autoSearch = false;
+        var currentTeam = (teamConfig && teamConfig.team_name) || selectedBoardName || (teamConfig && teamConfig.board_name) || '';
+        teams.forEach(function (t) {
+          var opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          if (t === currentTeam) { opt.selected = true; autoSearch = true; }
+          sel.appendChild(opt);
+        });
+        sel.disabled = false;
+        if (status) status.textContent = teams.length ? '' : 'No teams found for this project';
+        if (autoSearch) searchBoards();
+      })
+      .catch(function () {
+        sel.innerHTML = '<option value="">-- select a team --</option>';
+        sel.disabled = false;
+        if (status) status.textContent = 'Could not load teams';
+      });
+  }
+
+  function renderSettingsBacklogList() {
+    var el = document.getElementById('settings-backlog-list');
+    var ids = Object.keys(allBacklogs).sort(function (a, b) {
+      return allBacklogs[a].localeCompare(allBacklogs[b]);
+    });
+    if (ids.length === 0) {
+      el.innerHTML = '<span style="color:#5e6c84;">Available after Jira connects</span>';
+      return;
+    }
+    el.innerHTML = '';
+    ids.forEach(function (id) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer;font-size:13px;';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!selectedBacklogs[id];
+      cb.dataset.sprintId = id;
+      cb.addEventListener('change', function () {
+        selectedBacklogs[id] = cb.checked;
+        if (cb.checked) {
+          createBacklogSection(id, allBacklogs[id]);
+          refreshTasks(true);
+        } else {
+          removeBacklogSection(id);
+        }
+        saveBacklogPrefs();
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(allBacklogs[id]));
+      el.appendChild(label);
+    });
+  }
+
+  function renderSettingsBacklogPreview() {
+    var el = document.getElementById('settings-backlog-list');
+    var sprints = settingsBacklogPreview || {};
+    var ids = Object.keys(sprints).sort(function (a, b) {
+      return sprints[a].localeCompare(sprints[b]);
+    });
+    if (ids.length === 0) {
+      el.innerHTML = '<span style="color:#5e6c84;">No backlog sprints found</span>';
+      return;
+    }
+    el.innerHTML = '';
+    ids.forEach(function (id) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer;font-size:13px;';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!selectedBacklogs[id];
+      cb.dataset.sprintId = id;
+      cb.addEventListener('change', function () {
+        selectedBacklogs[id] = cb.checked;
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(sprints[id]));
+      el.appendChild(label);
+    });
+  }
+
+  var boardSearchTimer = null;
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var teamSel = document.getElementById('settings-team-select');
+    if (teamSel) teamSel.addEventListener('change', function () {
+      selectedBoardId = null;
+      selectedBoardName = '';
+      updateBoardSelectedDisplay();
+      searchBoards();
+    });
+    var projectInput = document.getElementById('settings-project-key');
+    if (projectInput) {
+      projectInput.addEventListener('input', function () {
+        clearTimeout(boardSearchTimer);
+        boardSearchTimer = setTimeout(function () {
+          var key = projectInput.value.trim();
+          if (key) loadTeamDropdown(key);
+        }, 400);
+      });
+    }
+  });
+
+  window.saveSettings = function () {
+    var projectKey = document.getElementById('settings-project-key').value.trim();
+    var boardId = selectedBoardId || teamConfig.board_id;
+    var boardName = selectedBoardName || teamConfig.board_name || '';
+    var boardChanged = boardId !== teamConfig.board_id;
+
+    var hasPending = Object.keys(pendingMoves).length > 0 || Object.keys(pendingEdits).length > 0 || Object.keys(pendingTransitions).length > 0;
+    if (boardChanged && hasPending) {
+      showConfirm(
+        'Discard all pending changes?',
+        'Switching boards will discard all unsaved moves, edits, and transitions. This cannot be undone.',
+        'Discard & Switch',
+        function () { doDiscardAll(); doSaveSettings(); }
+      );
+      return;
+    }
+    doSaveSettings();
+  };
+
+  function doSaveSettings() {
+    var projectKey = document.getElementById('settings-project-key').value.trim();
+    var boardId = selectedBoardId || teamConfig.board_id;
+    var boardName = selectedBoardName || teamConfig.board_name || '';
+    var boardChanged = boardId !== teamConfig.board_id;
+    var teamNameSel = document.getElementById('settings-team-select');
+    var teamName = teamNameSel ? teamNameSel.value : '';
+
+    var cfg = {
+      project_key: projectKey,
+      board_id: boardId,
+      board_name: boardName,
+      team_name: teamName
+    };
+
+    fetch(API_BASE + '/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) {
+          teamConfig.project_key = projectKey;
+          teamConfig.board_id = boardId;
+          teamConfig.board_name = boardName;
+          teamConfig.team_name = teamName;
+
+          // Collect selected backlogs from the settings checkboxes
+          var newSelected = [];
+          document.querySelectorAll('#settings-backlog-list input[type="checkbox"]:checked').forEach(function (cb) {
+            newSelected.push(cb.dataset.sprintId);
+          });
+
+          // Dismiss dialog immediately so UI is responsive
+          closeSettings();
+          showToast('Settings saved', 'success');
+
+          if (boardChanged) {
+            // Full reset for board switch
+            document.getElementById('backlog-container').innerHTML = '';
+            SPRINT_NAMES = {};
+            allBacklogs = {};
+            selectedBacklogs = {};
+            pendingMoves = {};
+            pendingEdits = {};
+            pendingTransitions = {};
+            clearPendingStorage();
+            renderPendingPanel();
+
+            // Save backlog prefs for the new board
+            fetch(API_BASE + '/api/backlog-prefs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ selected: newSelected })
+            }).catch(function () {});
+
+            initBoardInfo()
+              .then(function () { refreshTasks(true); })
+              .catch(function () { showToast('Refresh failed \u2014 try reloading', 'warn'); });
+          } else {
+            // Same board — check if backlog selection changed
+            var oldSelected = Object.keys(selectedBacklogs).sort().join(',');
+            var newSelectedSorted = newSelected.slice().sort().join(',');
+            if (oldSelected !== newSelectedSorted) {
+              // Save new prefs
+              var prefs = { selected: newSelected, order: newSelected, filters: sectionFilters };
+              fetch(API_BASE + '/api/backlog-prefs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(prefs)
+              }).catch(function () {});
+
+              // Remove deselected sections, add new ones
+              var oldSet = {};
+              Object.keys(selectedBacklogs).forEach(function (id) { oldSet[id] = true; });
+              var newSet = {};
+              newSelected.forEach(function (id) { newSet[id] = true; });
+
+              // Remove sections no longer selected
+              Object.keys(oldSet).forEach(function (id) {
+                if (!newSet[id]) {
+                  removeBacklogSection(id);
+                  delete selectedBacklogs[id];
+                }
+              });
+
+              // Add newly selected sections with loading placeholders
+              newSelected.forEach(function (id) {
+                if (!oldSet[id]) {
+                  var name = (settingsBacklogPreview && settingsBacklogPreview[id]) || allBacklogs[id] || sprintName(id === 'backlog' ? 'backlog' : parseInt(id));
+                  allBacklogs[id] = name;
+                  selectedBacklogs[id] = true;
+                  SPRINT_NAMES[id === 'backlog' ? 'backlog' : parseInt(id)] = name;
+                  createBacklogSection(id, name);
+                }
+              });
+
+              // Fetch tasks asynchronously — sections already show "Fetching..." placeholder
+              refreshTasks(true);
+            }
+          }
+        } else {
+          showToast('Save failed: ' + (d.error || 'unknown'), 'error');
+        }
+      })
+      .catch(function (err) {
+        showToast('Could not save settings: ' + (err.message || 'server unreachable'), 'error');
+      });
+  }
+
+  // ── Board info initializer ──
+  function initBoardInfo() {
+    return fetch(API_BASE + '/api/sprint-info')
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().catch(function () { return {}; }).then(function (body) {
+            var err = new Error('HTTP ' + r.status);
+            err.hint = body.hint || body.error || null;
+            throw err;
+          });
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        if (data.team) teamConfig.team = data.team;
+        if (data.board_name) teamConfig.board_name = data.board_name;
+        if (data.board_id) teamConfig.board_id = data.board_id;
+        if (data.project_key) teamConfig.project_key = data.project_key;
+        if (data.team_name) teamConfig.team_name = data.team_name;
+
+        // Store sprint names
+        if (data.backlog_sprints) {
+          Object.keys(data.backlog_sprints).forEach(function (id) {
+            var sid = id === 'backlog' ? 'backlog' : parseInt(id);
+            SPRINT_NAMES[sid] = data.backlog_sprints[id];
+          });
+        }
+
+        // Update header
+        document.title = 'Backlog Sweeper \u2014 ' + (data.board_name || 'Board');
+        document.getElementById('page-title').textContent = 'Backlog Sweeper';
+        document.getElementById('meta-board').textContent = 'Board: ' + (data.board_name || 'Not configured');
+
+        return initBacklogs(data.backlog_sprints || {});
+      })
+      .catch(function (err) {
+        var msg = err.hint || 'Board info failed \u2014 check settings';
+        showToast(msg, 'error');
+      });
+  }
+
+  // ── Startup service check ──
+  (function startupCheck() {
+    var overlay = document.getElementById('startup-overlay');
+    var svrIcon = document.getElementById('svc-server-icon');
+    var svrHint = document.getElementById('svc-server-hint');
+    var jiraIcon = document.getElementById('svc-jira-icon');
+    var jiraHint = document.getElementById('svc-jira-hint');
+    var dockerIcon = document.getElementById('svc-docker-icon');
+    var dockerHint = document.getElementById('svc-docker-hint');
+
+    function setRow(icon, hint, state, msg) {
+      icon.textContent = state === 'ok' ? '\u2713' : state === 'err' ? '\u2717' : '\u23F3';
+      icon.style.color = state === 'ok' ? '#006644' : state === 'err' ? '#bf2600' : '#5e6c84';
+      hint.textContent = msg;
+      hint.className = 'svc-hint' + (state === 'err' ? ' err' : '');
+    }
+
+    var initialLoadDone = false;
+
+    function dismiss() {
+      overlay.classList.add('hidden');
+      setTimeout(function () { overlay.style.display = 'none'; }, 320);
+      if (!initialLoadDone) {
+        initialLoadDone = true;
+        // Load full config
+        fetch(API_BASE + '/api/config')
+          .then(function (r) { return r.json(); })
+          .then(function (cfg) {
+            Object.keys(cfg).forEach(function (k) { teamConfig[k] = cfg[k]; });
+            if (!cfg.board_id) {
+              openSettings();
+              showToast('No board configured \u2014 set up your board in Settings', 'info');
+            }
+          })
+          .catch(function () {});
+        // Fetch issue types
+        fetch(API_BASE + '/api/issue-types')
+          .then(function (r) { return r.json(); })
+          .then(function (types) { cachedIssueTypes = types; })
+          .catch(function () {});
+        // Init board and load tasks
+        initBoardInfo().then(function () { refreshTasks(true); });
+      }
+    }
+
+    var passed = { jira: false, docker: false };
+
+    function poll() {
+      if (!passed.jira) setRow(jiraIcon, jiraHint, 'checking', 'Checking\u2026');
+      if (!passed.docker) setRow(dockerIcon, dockerHint, 'checking', 'Checking\u2026');
+
+      var skip = Object.keys(passed).filter(function (k) { return passed[k]; });
+      var url = API_BASE + '/api/health' + (skip.length ? '?skip=' + skip.join(',') : '');
+
+      fetch(url, { signal: AbortSignal.timeout(7000) })
+        .then(function (resp) { return resp.json(); })
+        .then(function (d) {
+          setRow(svrIcon, svrHint, 'ok', 'Running on localhost:5001');
+
+          // Store Jira URL if provided
+          if (d.jira_url) JIRA_URL = d.jira_url;
+
+          if (!passed.jira) {
+            if (d.jira) {
+              passed.jira = true;
+              setRow(jiraIcon, jiraHint, 'ok', 'Connected' + (JIRA_URL ? ' to ' + JIRA_URL.replace(/^https?:\/\//, '') : ''));
+            } else {
+              setRow(jiraIcon, jiraHint, 'err',
+                'Unreachable' + (d.jira_error ? ': ' + d.jira_error : '') +
+                ' \u2014 make sure MCP server is running');
+            }
+          }
+
+          if (!passed.docker) {
+            if (d.docker) {
+              passed.docker = true;
+              setRow(dockerIcon, dockerHint, 'ok', 'Docker Desktop is running');
+            } else {
+              setRow(dockerIcon, dockerHint, 'err',
+                (d.docker_error || 'Not running') + ' \u2014 start Docker Desktop');
+            }
+          }
+
+          if (passed.jira && passed.docker) {
+            dismiss();
+          } else {
+            setTimeout(poll, 2000);
+          }
+        })
+        .catch(function () {
+          setRow(svrIcon, svrHint, 'err', 'Not running \u2014 start with: python backlog-server.py');
+          passed = { jira: false, docker: false };
+          setRow(jiraIcon, jiraHint, 'checking', 'Waiting for server\u2026');
+          setRow(dockerIcon, dockerHint, 'checking', 'Waiting for server\u2026');
+          setTimeout(poll, 2000);
+        });
+    }
+
+    poll();
+  })();
+
+})();
+</script>
+</body>
+</html>

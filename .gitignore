@@ -1,0 +1,6 @@
+.mcp.json
+team-config.json
+backlog-prefs.json
+__pycache__/
+icons/
+.claude/
