@@ -152,7 +152,7 @@ The server resolves transitions by name (not just ID) since IDs vary by state:
 
 - Never commit `.mcp.json` — contains the Jira personal token
 - Never commit `team-config.json` — contains team-specific settings
-- npm/Node.js blocked by corporate network; Python + vanilla JS only
+- This project uses Python + vanilla JS by design (single-file frontend, no build step)
 
 ## Relationship to SprintPlanner
 
